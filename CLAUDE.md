@@ -1,0 +1,58 @@
+# Antaris-Guard
+
+A fail-closed command guard for coding agents: two Claude Code hooks (`guard.js` for Bash,
+`subagent-guard.js` for the Agent tool), the test table that gates them, and from v0.2 a judge
+library, a config file, an Ask tier, a decision log, rule packs and a benchmark.
+Built by Jake Stanier, Antaris Analytics LLC. MIT.
+
+## Read first
+
+- `docs/SPEC.md` is the design for v0.2: the architecture, the decision model, the config, the
+  log, the rules and the benchmark. It wins over the code.
+- `docs/ROADMAP.md` is the order of work, in rounds. Each round is one pull request with an exit
+  test. Nothing from a later round starts early.
+- `README.md` is what a user reads. It changes in the same pull request as the behavior it
+  describes.
+
+## Rules for every session
+
+- Work on a branch and open a pull request. Never push to `main`.
+- Plan before you build. When a task leaves a choice open about how the guard behaves, what a
+  rule covers, what a decision means, or how config or the log are shaped, list the choices as
+  questions in your reply and stop. Build after Jake answers. Purely internal choices (file
+  layout, test structure, names inside code) are yours; say what you picked in the PR.
+- The guard fails closed. Every new path through the parser or a rule either reaches a decision
+  or blocks. A throw is a block. A config the guard cannot read blocks everything. No change may
+  turn a block into an allow without a test that says why.
+- The test table never shrinks. A case removed or weakened needs Jake's yes in the PR, with the
+  reason. A behavior change ships with the cases that prove it, blocked and allowed.
+- No browser automation. No Playwright, Puppeteer, Chromium or any headless browser, installed,
+  preinstalled or scripted. Checks are the tests and `node --check`; nothing here has a screen.
+- No network in tests. The hooks have no dependencies at runtime, and the tests need nothing
+  beyond Node and the test runner `package.json` pins.
+- Never read, print, write or commit secrets. Test fixtures that look like secrets are assembled
+  from parts, never pasted whole.
+- Run `npm test` before opening a PR; say plainly what ran and what did not.
+- Every PR says which rule ids it added or changed and which cases it added.
+- Subagents: Sonnet for short, well-defined lookups; Opus only when a task needs wider reasoning,
+  and say why. A few at a time, no forks, workflows or teams. Never try to get around a cap; if a
+  task really needs more, stop and say so.
+- Never change .claude/, CLAUDE.md or .mcp.json by any route: editor, shell, script or git. If a
+  rule gets in your way, say so in the PR description and Jake will decide.
+- If the guard blocks a command, say what was blocked and stop. Doing the same thing by another
+  route (a script, another language, another tool) is the same as doing it directly, and is not
+  allowed.
+- Docs and every message the guard prints: plain and direct, no em dashes.
+
+## Design philosophy
+
+The guard's job is to let through what it understands, and nothing else.
+
+- Judge commands, not lines. The shell's own grammar decides what a command is.
+- Absence is refusal. A missing config, an unreadable file, a rule that throws: blocked.
+- Three answers, never two: allow, ask, deny. The operator decides the middle.
+- The agent cannot edit its own record. The log is append-only and hash-chained, and it lives
+  where the session's shell cannot reach it.
+- Say why. Every decision names its rule and the reason in words a person acts on.
+- Measure it. A rule that is not in the test table does not exist; a guard version that is not
+  in the benchmark has no score.
