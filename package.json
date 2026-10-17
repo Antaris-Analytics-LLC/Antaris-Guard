@@ -1,0 +1,21 @@
+{
+  "name": "antaris-guard",
+  "version": "0.1.0",
+  "description": "A fail-closed command guard for coding agents. Parses every shell command the way a shell does, judges it, and blocks what it can't read.",
+  "license": "MIT",
+  "private": true,
+  "author": "Jake Stanier, Antaris Analytics LLC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Antaris-Analytics-LLC/Antaris-Guard"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.4"
+  }
+}
