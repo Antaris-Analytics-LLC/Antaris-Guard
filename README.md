@@ -90,6 +90,10 @@ npm test
 
 `test/guard.test.ts` runs the Bash guard against a table of 165 commands, 107 that must be blocked and 58 that must be allowed, plus a tool call that cannot be read, each run the way Claude Code runs the hook. The allowed side matters as much as the blocked side: a commit message that mentions `git push origin main`, a grep for `cdk deploy`, a heredoc with a quote in it, a push to a branch with `main` elsewhere on the line, all pass. `test/subagent-guard.test.ts` runs the subagent guard through its model, fork, isolation and nesting rules, the five-per-session count, and eight parallel calls.
 
+## What comes next
+
+v0.2 keeps every behavior above and adds the parts a second repository needs to adopt the guard without editing code: a judge library with three answers (allow, ask, deny), a config file under `.claude/`, a decision log the session cannot edit, rule packs for toolchains, a command line with `init`, `explain` and `check`, and a benchmark with a score per version. The design is in [docs/SPEC.md](docs/SPEC.md) and the order of work in [docs/ROADMAP.md](docs/ROADMAP.md).
+
 ## Provenance
 
 These files are the hooks running in [Inventaris](https://inventaris.live), an inventory and order system built at Antaris Analytics in Claude Code sessions, with every line reviewed before merge. They are published as they are there, from that repository's `main` at the commit this repository's first pull request names, so the test table is the one that gates changes to the live hook.
