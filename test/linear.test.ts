@@ -11,7 +11,9 @@ import { ROOT } from "./harness.ts";
  * rewritten to give the same answer in one pass. The old code is kept here, word for word from
  * bench/versions/v0.1/guard.js, and both are run over tens of thousands of generated inputs built
  * from the tokens that matter to each; any input where they disagree fails with the input shown.
- * The generator is seeded, so a failure is the same failure every run.
+ * The generator is seeded, so a failure is the same failure every run. G05 is the one whose
+ * match R2 also changed (the two words count at the start of a word only), so its reference is
+ * the regex that states that match rather than v0.1's.
  */
 const require = createRequire(import.meta.url);
 const parse = require(path.join(ROOT, "lib", "parse.js"));
@@ -36,7 +38,6 @@ const sequence = <T>(next: () => number, from: T[], max: number): T[] => Array.f
 // The v0.1 code, word for word.
 const v01 = {
   substitution: (line: string) => /\$\(.*\)|`[^`]*`/.test(line),
-  removeItem: (line: string) => /\bRemove-Item\b[^|;&]*-Recurse\b/i.test(line),
   docker: (line: string) => /\b(docker)\s+(exec|rm|system|run\b.*(--privileged|-v\s*\/:))/.test(line),
   cdkDeploys: (words: string[]) => { const CDK_NAME = /^(aws-)?cdk(@[^/]*)?$/; return words.some((w, at) => CDK_NAME.test(parse.base(w)) && words.slice(at + 1).some((a) => a === "deploy" || a === "destroy")); },
   pushesOf: (words: string[]) => {
@@ -94,9 +95,11 @@ describe("the one-pass rewrites give v0.1's answer", () => {
     agree("G10", 1, (next) => sequence(next, ["$", "(", ")", "`", "a", " ", "$(", "x)"], 12).join(""), v01.substitution, (line) => G10.test({ line }));
   });
 
-  it("G05: Remove-Item then -Recurse in the same segment", () => {
-    const tokens = ["Remove-Item", "remove-item", "-Recurse", "-recurse", "-Recursex", "xRemove-Item", "Remove-Items", "|", ";", "&", "x", " ", "Remove-Item-Recurse"];
-    agree("G05", 2, (next) => sequence(next, tokens, 8).join(pick(next, [" ", ""])), v01.removeItem, (line) => G05.test({ line }));
+  it("G05: Remove-Item then -Recurse in the same segment, each at the start of a word", () => {
+    // R2's match, as one regex: the two words count only when nothing word-like, dot, dash or path separator sits before them.
+    const reference = /(?<![A-Za-z0-9_.\/\\-])Remove-Item\b[^|;&]*(?<![A-Za-z0-9_.\/\\-])-Recurse\b/i;
+    const tokens = ["Remove-Item", "remove-item", "-Recurse", "-recurse", "-Recursex", "xRemove-Item", "Remove-Items", "|", ";", "&", "x", " ", "Remove-Item-Recurse", "g05-remove-item-recurse.js", "lib/Remove-Item", "C:\\Remove-Item", "\"Remove-Item", "'-Recurse'", "x.-Recurse", "(-Recurse"];
+    agree("G05", 2, (next) => sequence(next, tokens, 8).join(pick(next, [" ", ""])), (line) => reference.test(line), (line) => G05.test({ line }));
   });
 
   it("docker-01: docker exec, rm, system, or run with --privileged or / mounted after it", () => {

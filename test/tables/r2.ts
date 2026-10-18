@@ -95,6 +95,9 @@ export const LOOSENED: [command: string, was: RegExp, why: string][] = [
   ['git commit -m "docs; find . -delete is now blocked"', /find -delete is a delete/, "a commit message is one word with the quotes removed; find is not run. v0.1 read the ; inside the quotes as a command start"],
   ['git commit -m "fix; node -e rmSync no longer runs"', /a delete inside inline code/, "the same: node is not run, and a delete word in a message is not a delete"],
   ["env foo find . -delete", /find -delete is a delete/, "env runs foo, and find is foo's argument; v0.1 skipped any words after env. A wrapper the guard does not know is foo"],
+  // G05 counts Remove-Item and -Recurse at the start of a word only, so the rule's own file name is not a delete.
+  ["cat lib/rules/g05-remove-item-recurse.js", /recursive delete/, "a file named after Remove-Item -Recurse is not a delete; v0.1 matched the two words inside the name"],
+  ["git add lib/rules/g05-remove-item-recurse.js", /recursive delete/, "the same file, staged"],
 ];
 
 export const REWORDED: [command: string, was: RegExp, now: RegExp, why: string][] = [
@@ -121,6 +124,11 @@ export const UNCHANGED: [command: string, reason: RegExp][] = [
   ["ls | xargs -I{} find {} -name rm", /xargs rm is a delete/],
   ["node -e 'x' ; echo rmSync", /a delete inside inline code/],
   ["npx tsx -e 'x' && echo unlinkSync", /a delete inside inline code/],
+  // Remove-Item -Recurse as a command, in either order and inside a pwsh string, is what it always was.
+  ["Remove-Item -Recurse x", /recursive delete/],
+  ["Remove-Item x -Recurse", /recursive delete/],
+  ['pwsh -c "Remove-Item -Recurse x"', /recursive delete/],
+  ["powershell -NoProfile -Command \"Remove-Item -Path out -Recurse -Force\"", /recursive delete/],
   // A closed substitution is what it always was, G10: arithmetic, a case statement's ) inside one, a body the shell expands.
   [`echo ${DOLLAR_PAREN}(1+2))`, /command substitution/],
   [`echo ${DOLLAR_PAREN}case x in a) echo a;; esac)`, /command substitution/],
@@ -150,6 +158,10 @@ export const ALLOWED: string[] = [
   "git log --grep='find -delete'",
   "node scripts/report.js --exec-dir out",
   "ruby scripts/notes.rb -e",
+  // The words of G05 mentioned, not run.
+  "grep -rn Remove-Item lib/rules",
+  "git log --oneline -- lib/rules",
+  "echo Remove-Item",
   // A shell string behind a runner that does nothing the rules name, and a runner that runs no shell string.
   "xargs bash -c 'echo ok'",
   "ls | xargs sh",
