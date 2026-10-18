@@ -1,0 +1,1 @@
+`guard.js` and `subagent-guard.js` here are byte for byte the files at `main` commit `fdf0a2e` (v0.1, the hooks as they ran in Inventaris); they never change, and `test/compare.test.ts` pins their SHA-256 and replays every table through them.
