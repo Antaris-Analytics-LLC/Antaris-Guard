@@ -12,7 +12,7 @@ import { INVENTARIS, ROOT, nest } from "./harness.ts";
  * config, configs/inventaris.json, as the tables do.
  */
 const require = createRequire(import.meta.url);
-const { judge, blockedLine } = require(path.join(ROOT, "lib", "judge.js"));
+const { judge, blockedLine, MAX_COMMAND_LENGTH } = require(path.join(ROOT, "lib", "judge.js"));
 const { RULES, UNREADABLE, ALL } = require(path.join(ROOT, "lib", "rules", "index.js"));
 const parse = require(path.join(ROOT, "lib", "parse.js"));
 
@@ -112,6 +112,23 @@ describe("judge()", () => {
       assert.deepEqual(judge(command, CONFIG), judge(command, CONFIG));
     }
   });
+
+  it("judges a command at the length cap and refuses one past it, before the parser sees it", () => {
+    assert.equal(MAX_COMMAND_LENGTH, 262144);
+    const atCap = "echo " + "a".repeat(MAX_COMMAND_LENGTH - 5);
+    assert.equal(atCap.length, MAX_COMMAND_LENGTH);
+    assert.equal(judge(atCap, CONFIG).decision, "allow");
+    const past = judge(atCap + "a", CONFIG);
+    assert.equal(past.rule, "G17");
+    assert.equal(past.reason, `the command is too long to judge: ${MAX_COMMAND_LENGTH + 1} characters; the guard reads at most ${MAX_COMMAND_LENGTH}. Put long content in a file with the Write tool`);
+    assert.equal(past.parse.line, `echo ${"a".repeat(195)} ...`);
+    assert.equal(blockedLine(past).length, "guard: blocked (G17 unreadable: ): ".length + past.reason.length + 204);
+    // Past the cap nothing is parsed: an unclosed quote in it is never seen, and a push to main in it is G17, not G07.
+    assert.match(judge("echo '" + "a".repeat(MAX_COMMAND_LENGTH), CONFIG).reason, /^the command is too long to judge/);
+    assert.match(judge("git push origin main # " + "a".repeat(MAX_COMMAND_LENGTH), CONFIG).reason, /^the command is too long to judge/);
+    // The cap counts characters of the command as given, before whitespace is collapsed.
+    assert.match(judge("echo" + " ".repeat(MAX_COMMAND_LENGTH), CONFIG).reason, /^the command is too long to judge/);
+  });
 });
 
 describe("the rules", () => {
@@ -149,8 +166,10 @@ describe("the rules", () => {
       "the guard could not load: <why>",
       "could not read the config: <why>",
       "the config is not valid: <why>",
+      "the command is too long to judge: <length> characters; the guard reads at most <limit>. Put long content in a file with the Write tool",
     ]);
     assert.equal(UNREADABLE.config(err), "the config is not valid: why");
+    assert.equal(UNREADABLE.tooLong(300000, 262144), "the command is too long to judge: 300000 characters; the guard reads at most 262144. Put long content in a file with the Write tool");
   });
 
   it("print no em dashes", () => {
@@ -187,5 +206,40 @@ describe("parse()", () => {
     assert.throws(() => parse.parse("cat <<EOF"), /a heredoc that never reaches EOF/);
     assert.throws(() => parse.parse(nest(4, "ls")), /shells nested more than three deep/);
     assert.doesNotThrow(() => parse.parse(nest(3, "ls")));
+  });
+
+  it("finds the program past the wrappers, their options and their own positional words", () => {
+    const program = (line: string) => parse.programOf(parse.commandsOf(line)[0]).program;
+    assert.equal(program("timeout -s KILL 60 git push"), "git");
+    assert.equal(program("nice -n 10 git push"), "git");
+    assert.equal(program("setsid -f npm test"), "npm");
+    assert.equal(program("ionice -c 3 -n 7 find ."), "find");
+    assert.equal(program("chrt -i 0 find ."), "find");
+    assert.equal(program("taskset -c 0,1 find ."), "find");
+    assert.equal(program("taskset 0x1 find ."), "find");
+    assert.equal(program("flock -w 5 /tmp/lock find ."), "find");
+    assert.equal(program("flock -n /tmp/lock"), undefined);
+    assert.equal(program("unbuffer -p find ."), "find");
+    assert.equal(program("doas -u root find ."), "find");
+    assert.equal(program("busybox find ."), "find");
+    assert.equal(program("doas busybox find ."), "find");
+    assert.equal(program("CI=1 env -u X nohup timeout 5 find ."), "find");
+    // flock -c runs its string with sh -c, and is read as that.
+    assert.deepEqual(parse.programOf(parse.commandsOf("flock /tmp/lock -c 'find . -delete'")[0]), { program: "sh", rest: ["-c", "find . -delete"] });
+    assert.deepEqual(parse.parse("flock /tmp/lock -c 'git push origin main'").commands.map((c: string[]) => [...c]), [["flock", "/tmp/lock", "-c", "git push origin main"], ["git", "push", "origin", "main"]]);
+  });
+
+  it("finds the command a runner runs, for the rules that judge find and inline code", () => {
+    const run = (line: string) => parse.runOf(parse.commandsOf(line)[0]);
+    assert.deepEqual(run("xargs find . -delete"), { program: "find", rest: [".", "-delete"] });
+    assert.deepEqual(run("xargs -0 -I{} find {} -delete"), { program: "find", rest: ["{}", "-delete"] });
+    assert.deepEqual(run("npx find . -delete"), { program: "find", rest: [".", "-delete"] });
+    assert.deepEqual(run("npx -y -p pkg find ."), { program: "find", rest: ["."] });
+    assert.deepEqual(run("npm exec -- find ."), { program: "find", rest: ["."] });
+    assert.deepEqual(run("npm exec find -- ."), { program: "find", rest: ["--", "."] });
+    assert.deepEqual(run("timeout 5 xargs npx tsx -e 1"), { program: "tsx", rest: ["-e", "1"] });
+    assert.deepEqual(run("xargs"), { program: undefined, rest: [] });
+    assert.deepEqual(run("npm install"), { program: "npm", rest: ["install"] });
+    assert.deepEqual(run("ls -la"), { program: "ls", rest: ["-la"] });
   });
 });

@@ -5,6 +5,7 @@ import fs from "node:fs";
 import { CURRENT, FROZEN, agentCall, runGuard, runGuardRaw, runSubagent, runSubagentParallel, stripId, tempEnv } from "./harness.ts";
 import * as bash from "./tables/bash.ts";
 import * as g18 from "./tables/g18.ts";
+import * as r2 from "./tables/r2.ts";
 import * as subagent from "./tables/subagent.ts";
 
 /*
@@ -12,8 +13,11 @@ import * as subagent from "./tables/subagent.ts";
  * current ones, side by side. The decision must be the same and the stderr line must be the same
  * once the rule id and name are stripped from the current one. The only differences allowed are
  * the ones a round lists as new behavior: in R1, the blocked side of G18's table, where v0.1
- * allows and the current guard denies. Those are asserted as exactly that, not skipped, so a
- * row that stops being a difference (or starts being one for another reason) is caught too.
+ * allows and the current guard denies; in R2, the BLOCKED side of test/tables/r2.ts (the same
+ * shape) and its LOOSENED side, where v0.1 denies and the current guard allows, each row saying
+ * why. Those are asserted as exactly that, not skipped, so a row that stops being a difference
+ * (or starts being one for another reason) is caught too. The current hook runs under
+ * configs/inventaris.json, which the harness arranges; v0.1 has no config to read.
  */
 
 // SHA-256 of the two files at main fdf0a2e. A frozen copy that drifts fails here before anything else runs.
@@ -59,7 +63,7 @@ describe("compare: the v0.1 Bash table through v0.1 and the current guard", () =
   });
 });
 
-describe("compare: G18's table, the one listed difference", () => {
+describe("compare: G18's table, R1's listed difference", () => {
   for (const [command] of g18.BLOCKED) {
     it(`new block in R1: ${command}`, () => {
       const was = runGuard(FROZEN.guard, command), now = runGuard(CURRENT.guard, command);
@@ -74,6 +78,54 @@ describe("compare: G18's table, the one listed difference", () => {
       const was = runGuard(FROZEN.guard, command), now = runGuard(CURRENT.guard, command);
       assert.equal(was.code, 0, `v0.1 blocked: ${was.stderr}`);
       assert.equal(now.code, 0, `the current guard blocked: ${now.stderr}`);
+    });
+  }
+});
+
+describe("compare: R2's table, R2's listed differences", () => {
+  for (const [command, reason] of r2.BLOCKED) {
+    it(`new block in R2: ${command.slice(0, 80)}`, () => {
+      const was = runGuard(FROZEN.guard, command), now = runGuard(CURRENT.guard, command);
+      assert.equal(was.code, 0, `v0.1 already blocked this, so it is not new behavior: ${was.stderr.slice(0, 300)}`);
+      assert.equal(now.code, 2, `the current guard did not block: ${now.stderr.slice(0, 300)}`);
+      assert.match(now.reason, reason, now.stderr.slice(0, 300));
+    });
+  }
+
+  for (const [command, was, why] of r2.LOOSENED) {
+    it(`new allow in R2, since ${why.split(".")[0]}: ${command}`, () => {
+      const before = runGuard(FROZEN.guard, command), now = runGuard(CURRENT.guard, command);
+      assert.equal(before.code, 2, `v0.1 allowed this, so it is not a loosening: ${before.stderr}`);
+      assert.match(before.reason, was, `v0.1 blocked it for another reason: ${before.stderr}`);
+      assert.equal(now.code, 0, `the current guard still blocks: ${now.stderr}`);
+    });
+  }
+
+  for (const [command, was, now, why] of r2.REWORDED) {
+    it(`same block, new reason in R2, since ${why.split(",")[0]}: ${command}`, () => {
+      const before = runGuard(FROZEN.guard, command), after = runGuard(CURRENT.guard, command);
+      assert.equal(before.code, 2, `v0.1 did not block: ${before.stderr}`);
+      assert.equal(after.code, 2, `the current guard did not block: ${after.stderr}`);
+      assert.match(before.reason, was, `v0.1 gave another reason: ${before.stderr}`);
+      assert.match(after.reason, now, `the current guard gave another reason: ${after.stderr}`);
+      assert.notEqual(stripId(after.stderr), before.stderr, "the reason did not change, so this row belongs in UNCHANGED");
+    });
+  }
+
+  for (const [command] of r2.UNCHANGED) {
+    it(`same block: ${command}`, () => {
+      const was = runGuard(FROZEN.guard, command), now = runGuard(CURRENT.guard, command);
+      assert.equal(was.code, 2, `v0.1 did not block: ${was.stderr}`);
+      assert.equal(now.code, 2, `the current guard did not block: ${now.stderr}`);
+      assert.equal(stripId(now.stderr), was.stderr);
+    });
+  }
+
+  for (const command of r2.ALLOWED) {
+    it(`same allow: ${command.slice(0, 80)}`, () => {
+      const was = runGuard(FROZEN.guard, command), now = runGuard(CURRENT.guard, command);
+      assert.equal(was.code, 0, `v0.1 blocked: ${was.stderr.slice(0, 300)}`);
+      assert.equal(now.code, 0, `the current guard blocked: ${now.stderr.slice(0, 300)}`);
     });
   }
 });
@@ -104,16 +156,21 @@ describe("compare: the subagent table through v0.1 and the current hook", () => 
 });
 
 describe("compare: the count", () => {
-  it("reports zero differences apart from G18's blocked cases", (t) => {
-    let differences = 0, newBlocks = 0;
+  it("reports zero differences apart from the listed new blocks, new allows and new reasons", (t) => {
+    let differences = 0, newBlocks = 0, newAllows = 0, newReasons = 0;
     const same = (command: string) => { const was = runGuard(FROZEN.guard, command), now = runGuard(CURRENT.guard, command); return was.code === now.code && stripId(now.stderr) === was.stderr; };
-    for (const [command] of bash.BLOCKED) if (!same(command)) differences++;
-    for (const command of bash.ALLOWED) if (!same(command)) differences++;
-    for (const command of g18.ALLOWED) if (!same(command)) differences++;
-    for (const [command] of g18.BLOCKED) if (!same(command)) newBlocks++;
-    t.diagnostic(`v0.1 table and G18's allowed side: ${differences} differences across ${bash.BLOCKED.length + bash.ALLOWED.length + g18.ALLOWED.length} cases`);
-    t.diagnostic(`G18's blocked side: ${newBlocks} new blocks across ${g18.BLOCKED.length} cases`);
+    const unchanged = [...bash.BLOCKED.map(([c]) => c), ...bash.ALLOWED, ...g18.ALLOWED, ...r2.UNCHANGED.map(([c]) => c), ...r2.ALLOWED];
+    for (const command of unchanged) if (!same(command)) differences++;
+    for (const [command] of [...g18.BLOCKED, ...r2.BLOCKED]) if (!same(command)) newBlocks++;
+    for (const [command] of r2.LOOSENED) if (!same(command)) newAllows++;
+    for (const [command] of r2.REWORDED) if (!same(command)) newReasons++;
+    t.diagnostic(`the v0.1 table, G18's allowed side and R2's unchanged sides: ${differences} differences across ${unchanged.length} cases`);
+    t.diagnostic(`G18's and R2's blocked sides: ${newBlocks} new blocks across ${g18.BLOCKED.length + r2.BLOCKED.length} cases`);
+    t.diagnostic(`R2's loosened side: ${newAllows} new allows across ${r2.LOOSENED.length} cases`);
+    t.diagnostic(`R2's reworded side: ${newReasons} new reasons across ${r2.REWORDED.length} cases`);
     assert.equal(differences, 0);
-    assert.equal(newBlocks, g18.BLOCKED.length);
+    assert.equal(newBlocks, g18.BLOCKED.length + r2.BLOCKED.length);
+    assert.equal(newAllows, r2.LOOSENED.length);
+    assert.equal(newReasons, r2.REWORDED.length);
   });
 });
