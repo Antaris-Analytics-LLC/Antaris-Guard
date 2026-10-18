@@ -129,6 +129,9 @@ export const UNCHANGED: [command: string, reason: RegExp][] = [
   ["Remove-Item x -Recurse", /recursive delete/],
   ['pwsh -c "Remove-Item -Recurse x"', /recursive delete/],
   ["powershell -NoProfile -Command \"Remove-Item -Path out -Recurse -Force\"", /recursive delete/],
+  // The cmdlet qualified with its module: a backslash counts as a word start before Remove-Item.
+  ['pwsh -c "Microsoft.PowerShell.Management\\Remove-Item -Recurse x"', /recursive delete/],
+  ['powershell -Command "Microsoft.PowerShell.Management\\Remove-Item -Recurse -Force out"', /recursive delete/],
   // A closed substitution is what it always was, G10: arithmetic, a case statement's ) inside one, a body the shell expands.
   [`echo ${DOLLAR_PAREN}(1+2))`, /command substitution/],
   [`echo ${DOLLAR_PAREN}case x in a) echo a;; esac)`, /command substitution/],

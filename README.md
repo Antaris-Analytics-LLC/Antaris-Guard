@@ -53,7 +53,7 @@ In the order they run, which is the order v0.1 ran them, with G18 last so it onl
 | G02 | recursive-delete | deny | `rm -r` in any spelling, `git rm -r` included | recursive delete |
 | G03 | delete-in-inline-code | deny | A delete call inside inline code (`rmSync`, `unlink`, `rimraf`, `rmtree`, `rm_rf`, `fs.rm` and the like); also an interpreter run as a command with a code flag, past any wrapper or runner, with a delete call anywhere on the line | a delete inside inline code is still a delete; if a delete is needed, say what was blocked and stop |
 | G04 | find-or-xargs-delete | deny | `find -delete`, `find -exec rm` (and `-execdir`), `xargs rm`, judged per command: `find` or `xargs` is the command's program past any wrapper, runner or path, and the flag is one of its words with the quotes removed | find -delete is a delete; find -exec rm is a delete; xargs rm is a delete |
-| G05 | remove-item-recurse | deny | PowerShell's `Remove-Item -Recurse`, each word counted at the start of a word only, so a file named after them (`g05-remove-item-recurse.js`) is not one | recursive delete |
+| G05 | remove-item-recurse | deny | PowerShell's `Remove-Item -Recurse`, each word counted at the start of a word only, so a file named after them (`g05-remove-item-recurse.js`) is not one; the cmdlet qualified with its module (`Microsoft.PowerShell.Management\Remove-Item`) is | recursive delete |
 | G06 | force-push | deny | A force push: `--force`, `--force-with-lease`, `--force-if-includes`, `-f` alone or among short flags, or `+branch` | force push |
 | G07 | push-to-protected | deny | A push to a branch in `protectedBranches` (`main` and `master` by default), by any way of naming it: `HEAD:main`, `:main`, `--delete origin main`, `refs/heads/main`. The reason is v0.1's whichever branch was named | direct push to main; open a PR instead |
 | G08 | destructive-git | deny | `git reset --hard`, `git clean -f`, `git branch -D` | destructive git |
@@ -121,9 +121,9 @@ Be clear about this with whoever reads the guard's log.
 - **A string run by a program the guard does not read yet.** `sh -c`, `bash -c`, `npx -c`, `npm exec -c` and `flock -c` are read as commands; `find -exec sh -c`, `script -c`, `watch`, `env -S`, `parallel` and `tmux new-session` run strings too and are not read yet. Nor is `$'...'` quoting, which the parser reads as a word beginning with `$`, so `bash -c $'git push origin main'` is not seen as the push it is; nor `git push --mirror`, which pushes every branch without naming one and so passes G07. Round 5 reads them, each with its cases.
 - **Anything outside Bash and Agent calls.** Edits go through the permission lists in settings, which is where `.claude/`, `CLAUDE.md`, `.mcp.json` and `/opt/pw-browsers/` are denied to the Read and Edit tools.
 
-The line to add to your CLAUDE.md, in whatever words fit your repository:
+The rule to add to your CLAUDE.md, as this repository's own session rule reads:
 
-> If the guard blocks a command, say what was blocked and stop. Doing the same thing by another route (a script, another language, another tool) is the same as doing it directly, and is not allowed.
+> If the guard blocks a command, say what was blocked and stop. Doing the same thing by another route (a script, another language, another tool) is the same as doing it directly, and is not allowed. This includes reads. There are two exceptions. If the guard blocked a command substitution or a line it couldn't read, you may redo the work as plain, separate commands, which the guard then judges one by one. If the guard's message names another way, such as opening the file with the Read tool, use that.
 
 ## Install
 
