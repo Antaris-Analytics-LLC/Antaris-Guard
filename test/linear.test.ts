@@ -96,9 +96,10 @@ describe("the one-pass rewrites give v0.1's answer", () => {
   });
 
   it("G05: Remove-Item then -Recurse in the same segment, each at the start of a word", () => {
-    // R2's match, as one regex: the two words count only when nothing word-like, dot, dash or path separator sits before them.
-    const reference = /(?<![A-Za-z0-9_.\/\\-])Remove-Item\b[^|;&]*(?<![A-Za-z0-9_.\/\\-])-Recurse\b/i;
-    const tokens = ["Remove-Item", "remove-item", "-Recurse", "-recurse", "-Recursex", "xRemove-Item", "Remove-Items", "|", ";", "&", "x", " ", "Remove-Item-Recurse", "g05-remove-item-recurse.js", "lib/Remove-Item", "C:\\Remove-Item", "\"Remove-Item", "'-Recurse'", "x.-Recurse", "(-Recurse"];
+    // R2's match, as one regex: the two words count only when nothing word-like, a dot, a dash or a slash sits before
+    // them; a backslash counts before Remove-Item (a module-qualified cmdlet) and not before -Recurse.
+    const reference = /(?<![A-Za-z0-9_.\/-])Remove-Item\b[^|;&]*(?<![A-Za-z0-9_.\/\\-])-Recurse\b/i;
+    const tokens = ["Remove-Item", "remove-item", "-Recurse", "-recurse", "-Recursex", "xRemove-Item", "Remove-Items", "|", ";", "&", "x", " ", "Remove-Item-Recurse", "g05-remove-item-recurse.js", "lib/Remove-Item", "C:\\Remove-Item", "Microsoft.PowerShell.Management\\Remove-Item", "\\-Recurse", "\"Remove-Item", "'-Recurse'", "x.-Recurse", "(-Recurse"];
     agree("G05", 2, (next) => sequence(next, tokens, 8).join(pick(next, [" ", ""])), (line) => reference.test(line), (line) => G05.test({ line }));
   });
 
