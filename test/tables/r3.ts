@@ -1,3 +1,5 @@
+import os from "node:os";
+
 /*
  * R3's table: every decision the round changed, and the lookalikes that it did not. The same five
  * sides as test/tables/r2.ts:
@@ -14,8 +16,14 @@
  * R3 moves G16 from the line to the commands on it: every word of every command with the quotes
  * and backslashes removed, plus the delimiter and body of every heredoc a command is given. Not
  * judged, because none of it is a command or a path: a comment, and the message text of git
- * commit, git tag, gh pr and gh issue. Like every table, it never shrinks.
+ * commit, git tag, gh pr and gh issue. R3 also lets one read through: a reading program, or cp
+ * with the path as a source, reading a file the user uploaded under the home uploads folder
+ * ~/.claude/uploads. Like every table, it never shrinks.
+ *
+ * The uploads rows spell the home folder out with os.homedir(), the same folder the hook reads
+ * from context.home when the test harness spawns it, so the absolute form is the hook's own home.
  */
+const HOME = os.homedir().replace(/\/+$/, "");
 
 export const BLOCKED: [command: string, reason: RegExp][] = [
   // A protected name split by quotes or a backslash is one word to the shell, and now to the guard. v0.1 read the line as written and saw no name.
@@ -58,6 +66,16 @@ export const LOOSENED: [command: string, was: RegExp, why: string][] = [
   ["npm test # the table under .claude/ is the old one", /session's own rules/, "the same with a folder named in the comment"],
   // A name glued to another word by a quote is not that name once the quote is gone.
   ['echo x".claude"', /session's own rules/, "the word is x.claude once the quotes are gone, a file of that name, not the folder; v0.1 read the quote as a boundary in front of the name"],
+  // A file the user uploaded under the home uploads folder, read by a reading program or copied as a source.
+  ["cat ~/.claude/uploads/report.csv", /session's own rules/, "a reading program reading an uploaded file under the home uploads folder; the tilde form of home"],
+  ['head -n 5 "$HOME/.claude/uploads/data.json"', /session's own rules/, "the $HOME form of home"],
+  ["ls ${HOME}/.claude/uploads", /session's own rules/, "the folder itself, listed, and the ${HOME} form"],
+  ["wc -l ~/.claude/uploads/notes.md", /session's own rules/, "wc is a reading program"],
+  ["grep -n TODO ~/.claude/uploads/log.txt", /session's own rules/, "grep reading an upload, the pattern aside"],
+  ["diff ~/.claude/uploads/a.txt ~/.claude/uploads/b.txt", /session's own rules/, "two uploads, both read by diff"],
+  [`cat ${HOME}/.claude/uploads/report.csv`, /session's own rules/, "home spelled out, which the hook knows from context.home"],
+  ["cp ~/.claude/uploads/input.txt ./work/", /session's own rules/, "cp with the upload as a source and a destination outside the folder"],
+  ["cp -t ./work ~/.claude/uploads/a ~/.claude/uploads/b", /session's own rules/, "cp -t names the destination first, so both uploads are sources"],
 ];
 
 export const REWORDED: [command: string, was: RegExp, now: RegExp, why: string][] = [
@@ -90,6 +108,20 @@ export const UNCHANGED: [command: string, reason: RegExp][] = [
   ["gh pr create --body-file .claude/notes.md", /session's own rules/],
   // The whole string a shell is given is judged as text, so a message inside one is not skipped.
   ["bash -c 'git commit -m \"see CLAUDE.md\"'", /session's own rules/],
+  // The uploads exemption forgives one read, nothing more; every write and every other .claude path stays blocked.
+  ["cat ~/.claude/uploads/../settings.json", /session's own rules/],
+  ["cat ~/.claude/settings.json", /session's own rules/],
+  ["cat .claude/uploads/x", /session's own rules/],
+  ["cat ~/.claude/uploadsX/secret", /session's own rules/],
+  ["cp ~/data.txt ~/.claude/uploads/", /session's own rules/],
+  ["cp ~/.claude/uploads/x ~/.claude/settings.json", /session's own rules/],
+  ["cat ~/.claude/uploads/x ~/.claude/settings.json", /session's own rules/],
+  ["cat ~/.claude/uploads/x > out.txt", /session's own rules/],
+  ["cat ~/.claude/uploads/x 2>~/.claude/err", /session's own rules/],
+  ["rm ~/.claude/uploads/x", /session's own rules/],
+  ["mv ~/.claude/uploads/x ./", /session's own rules/],
+  ["node ~/.claude/uploads/script.js", /session's own rules/],
+  ["tee ~/.claude/uploads/x", /session's own rules/],
 ];
 
 export const ALLOWED: string[] = [

@@ -93,7 +93,7 @@ Ids never change meaning. A retired rule's id is not reused.
 | G13 | credential-directory | deny | `~/.aws` and the others, config |
 | G14 | push-or-deploy-in-inline-code | deny | |
 | G15 | wide-chmod | deny | |
-| G16 | protected-path | deny | `.claude/`, `CLAUDE.md`, `.mcp.json`, plus config; from R3 judged per command, heredoc bodies included, with comments and the message text of `git commit`, `git tag`, `gh pr` and `gh issue` left out |
+| G16 | protected-path | deny | `.claude/`, `CLAUDE.md`, `.mcp.json`, plus config; from R3 judged per command, heredoc bodies included, with comments and the message text of `git commit`, `git tag`, `gh pr` and `gh issue` left out, and one read let through: a reading program or `cp` source reading a file under `~/.claude/uploads` |
 | G17 | unreadable | deny | an unclosed quote, a heredoc with no end, shells nested too deep, a rule that threw |
 | G18 | browser-automation | deny | new: playwright, puppeteer, chromium, pw-browsers, headless, selenium, webdriver |
 | G19 | push-to-url-or-unknown-remote | deny | new: `git push https://...`, a remote not in config, `git remote add` or `set-url` |
