@@ -39,7 +39,7 @@ Built by Jake Stanier, Antaris Analytics LLC. MIT.
   task really needs more, stop and say so.
 - Never change .claude/, CLAUDE.md or .mcp.json by any route: editor, shell, script or git. If a
   rule gets in your way, say so in the PR description and Jake will decide.
-- If the guard blocks a command, say what was blocked and stop. Doing the same thing by another
+- If the guard blocks a command, say what was blocked and stop. Doing the same thing by another route (a script, another language, another tool) is the same as doing it directly, and is not allowed. This includes reads. There are two exceptions. If the guard blocked a command substitution or a line it couldn't read, you may redo the work as plain, separate commands, which the guard then judges one by one. If the guard's message names another way, such as opening the file with the Read tool, use that.
   route (a script, another language, another tool) is the same as doing it directly, and is not
   allowed.
 - Docs and every message the guard prints: plain and direct, no em dashes.
