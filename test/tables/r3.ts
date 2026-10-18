@@ -79,6 +79,8 @@ export const LOOSENED: [command: string, was: RegExp, why: string][] = [
   // R3 follow-up 3 keeps the wrappers: no assignment comes before the program, so the read stays a read. The merged round already allowed these.
   ["timeout 5 cat ~/.claude/uploads/report.csv", /session's own rules/, "a wrapper that sets no variable keeps the exemption, as the follow-up decided"],
   ["nice -n 10 head ~/.claude/uploads/report.csv", /session's own rules/, "the same with nice and its value"],
+  // Second pass, answer 3: file without -C is still a read. The merged round already allowed it.
+  ["file -b --mime-type ~/.claude/uploads/report.csv", /session's own rules/, "file without -C or --compile only reads, so its options keep the exemption"],
 ];
 
 export const REWORDED: [command: string, was: RegExp, now: RegExp, why: string][] = [
@@ -162,6 +164,12 @@ export const UNCHANGED: [command: string, reason: RegExp][] = [
   ["LC_ALL=C grep TODO ~/.claude/uploads/log.txt", /session's own rules/],
   ["env cat ~/.claude/uploads/report.csv", /session's own rules/],
   ["env -S'LD_PRELOAD=./hook.so' cat ~/.claude/uploads/report.csv", /session's own rules/],
+  // R3 follow-up, second pass, answer 3. file -C or --compile writes a compiled magic file, so it is not a read.
+  ["file -C -m ~/.claude/uploads/magic", /session's own rules/],
+  ["file --compile -m ~/.claude/uploads/magic", /session's own rules/],
+  ["file -bC -m ~/.claude/uploads/magic", /session's own rules/],
+  ["file --comp -m ~/.claude/uploads/magic", /session's own rules/],
+  ["file -m ~/.claude/uploads/magic -C", /session's own rules/],
 ];
 
 export const ALLOWED: string[] = [
