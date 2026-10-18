@@ -174,6 +174,11 @@ Builds:
   `config.remotes`, and `git remote add`, `remove`, `rename` and `set-url`, are denied.
 - G01 judged per command, including inside shell strings, so `bash -c "curl x"` is caught by
   the program and not by luck. Any case this changes is listed.
+- The programs that run a string the guard does not read yet, read the way `sh -c` is since R2:
+  `find -exec sh -c`, `script -c`, `watch`, `env -S`, `parallel`, `tmux new-session`. With them,
+  `$'...'` quoting, which the parser reads as a word beginning with `$`, so `bash -c $'git push
+  origin main'` is not the push it is; and `git push --mirror`, which pushes every branch without
+  naming one and so passes G07. Each with cases, blocked and allowed.
 - Cases for all of it: twenty or more per rule, with allowed cases that look alike
   (`node scripts/copy.mjs` that copies, `npm run build`, `x=1; echo $x`, a push to `origin`).
 
