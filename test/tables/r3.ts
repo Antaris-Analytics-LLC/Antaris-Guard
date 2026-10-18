@@ -135,6 +135,18 @@ export const UNCHANGED: [command: string, reason: RegExp][] = [
   ["cp --li ~/.claude/uploads/report.csv ./report.csv", /session's own rules/],
   ["cp ~/.claude/uploads/report.csv ./report.csv -s", /session's own rules/],
   ["cp -t ./work -l ~/.claude/uploads/report.csv", /session's own rules/],
+  // R3 follow-up 2. rg, less and more are not reading programs for the uploads read: rg runs a program
+  // on each file with --pre, --pre-glob and --hostname-bin, and the pagers write log files. Even a
+  // plain rg, less or more of an upload blocks now.
+  ["rg TODO ~/.claude/uploads/log.txt", /session's own rules/],
+  ["rg --pre ./decode.sh TODO ~/.claude/uploads/log.txt", /session's own rules/],
+  ["rg --pre=./decode.sh --pre-glob '*.gz' TODO ~/.claude/uploads/log.gz", /session's own rules/],
+  ["rg --hostname-bin ./name TODO ~/.claude/uploads/log.txt", /session's own rules/],
+  ["less ~/.claude/uploads/report.csv", /session's own rules/],
+  ["less -o ./copy.csv ~/.claude/uploads/report.csv", /session's own rules/],
+  ["less -O ./copy.csv ~/.claude/uploads/report.csv", /session's own rules/],
+  ["less --LOG-FILE=./copy.csv ~/.claude/uploads/report.csv", /session's own rules/],
+  ["more ~/.claude/uploads/report.csv", /session's own rules/],
 ];
 
 export const ALLOWED: string[] = [
