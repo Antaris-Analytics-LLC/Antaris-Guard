@@ -76,6 +76,9 @@ export const LOOSENED: [command: string, was: RegExp, why: string][] = [
   [`cat ${HOME}/.claude/uploads/report.csv`, /session's own rules/, "home spelled out, which the hook knows from context.home"],
   ["cp ~/.claude/uploads/input.txt ./work/", /session's own rules/, "cp with the upload as a source and a destination outside the folder"],
   ["cp -t ./work ~/.claude/uploads/a ~/.claude/uploads/b", /session's own rules/, "cp -t names the destination first, so both uploads are sources"],
+  // R3 follow-up 3 keeps the wrappers: no assignment comes before the program, so the read stays a read. The merged round already allowed these.
+  ["timeout 5 cat ~/.claude/uploads/report.csv", /session's own rules/, "a wrapper that sets no variable keeps the exemption, as the follow-up decided"],
+  ["nice -n 10 head ~/.claude/uploads/report.csv", /session's own rules/, "the same with nice and its value"],
 ];
 
 export const REWORDED: [command: string, was: RegExp, now: RegExp, why: string][] = [
@@ -147,6 +150,18 @@ export const UNCHANGED: [command: string, reason: RegExp][] = [
   ["less -O ./copy.csv ~/.claude/uploads/report.csv", /session's own rules/],
   ["less --LOG-FILE=./copy.csv ~/.claude/uploads/report.csv", /session's own rules/],
   ["more ~/.claude/uploads/report.csv", /session's own rules/],
+  // R3 follow-up 3. An assignment before the program changes what it runs, so the command is not a plain
+  // read: directly, through env, behind a wrapper, and even a harmless one. env with no assignment counts
+  // too, since -S can carry one inside a word.
+  ["LD_PRELOAD=./hook.so cat ~/.claude/uploads/report.csv", /session's own rules/],
+  ["env LD_PRELOAD=./hook.so cat ~/.claude/uploads/report.csv", /session's own rules/],
+  ["RIPGREP_CONFIG_PATH=./rg.conf grep TODO ~/.claude/uploads/log.txt", /session's own rules/],
+  ["LESSOPEN='|./show %s' head ~/.claude/uploads/report.csv", /session's own rules/],
+  ["timeout 5 env LD_PRELOAD=./hook.so cat ~/.claude/uploads/report.csv", /session's own rules/],
+  ["nice -n 10 LD_PRELOAD=./hook.so cat ~/.claude/uploads/report.csv", /session's own rules/],
+  ["LC_ALL=C grep TODO ~/.claude/uploads/log.txt", /session's own rules/],
+  ["env cat ~/.claude/uploads/report.csv", /session's own rules/],
+  ["env -S'LD_PRELOAD=./hook.so' cat ~/.claude/uploads/report.csv", /session's own rules/],
 ];
 
 export const ALLOWED: string[] = [
