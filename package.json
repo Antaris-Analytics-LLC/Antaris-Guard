@@ -10,12 +10,9 @@
     "url": "https://github.com/Antaris-Analytics-LLC/Antaris-Guard"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
   },
   "scripts": {
-    "test": "vitest run"
-  },
-  "devDependencies": {
-    "vitest": "^5.0.4"
+    "test": "node --test \"test/**/*.test.ts\""
   }
 }

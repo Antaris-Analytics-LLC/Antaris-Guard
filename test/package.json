@@ -1,0 +1,4 @@
+{
+  "$comment": "The tests are ES modules; the hooks and lib/ are CommonJS. This file scopes \"type\": \"module\" to test/ so Node runs the .test.ts files without a warning and the root stays CommonJS.",
+  "type": "module"
+}
