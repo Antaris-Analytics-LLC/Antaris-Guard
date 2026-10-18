@@ -9,7 +9,7 @@ Two hooks for Claude Code, published as they run in production at Antaris Analyt
 
 Both read the tool call as JSON on stdin, exit 2 with a reason to block, exit 0 to allow. Anything they cannot read is blocked.
 
-Since v0.2 round 1, the Bash guard is a thin shell around a judge library: `lib/parse.js` reads the line, `lib/rules/` holds one file per rule with a stable id, and `lib/judge.js` runs them in order and returns `{ decision, rule, reason, parse }`. Every block names its rule. Since round 2, the lists that name a repository (the blocked programs, the protected branches, the secret names and files, the credential directories, the protected paths and the operator's name) live in a config file, `.claude/guard.config.json`, which `lib/config.js` reads and validates; the hook refuses every command until that file exists and is valid.
+Since v0.2 round 1, the Bash guard is a thin shell around a judge library: `lib/parse.js` reads the line, `lib/rules/` holds one file per rule with a stable id, and `lib/judge.js` runs them in order and returns `{ decision, rule, reason, parse }`. Every block names its rule. Since round 2, the lists that name a repository (the blocked programs, the protected branches, the secret names and files, the credential directories, the protected paths and the operator's name) live in a config file, `.claude/guard.config.json`, which `lib/config.js` reads and validates; the hook refuses every command until that file exists and is valid. Since round 3, every decision, allows included, is appended to a hash-chained log under `.claude/guard/` by `lib/log.js`, with the command stored as a hash and never as text; a decision the log cannot keep is a block.
 
 ## Why this exists
 
@@ -36,12 +36,13 @@ guard: blocked (G18 browser-automation: browser automation is off in this repo: 
 guard: blocked (G17 unreadable: could not read the command: an unclosed quote): echo 'unclosed
 guard: blocked (G17 unreadable: could not read the config: /repo/.claude/guard.config.json is missing; the operator writes it, following configs/README.md): git status
 guard: blocked (G17 unreadable: the config is not valid: rules.G07 cannot be off): git status
+guard: blocked (G17 unreadable: could not write the log: /repo/.claude/guard/log.jsonl: EACCES: permission denied, open '/repo/.claude/guard/log.jsonl'): git status
 guard: blocked (G17 unreadable: the guard could not load: Cannot find module '/repo/.claude/hooks/lib/judge.js' Require stack: - /repo/.claude/hooks/guard.js)
 ```
 
-An allow is silence: exit 0, nothing printed, and Claude Code's own permission settings apply as usual.
+An allow is silence: exit 0, nothing printed, and Claude Code's own permission settings apply as usual. Every decision, the silent allows included, is one line in the decision log first.
 
-The hook fails closed by itself, with exit 2, in every case it can reach: a tool call that is not JSON, a config file that is missing, unreadable, not JSON or not valid, a line it cannot read, a rule that throws, a `lib/` folder it cannot load, and anything else that throws anywhere in the process (an `uncaughtException` handler is the last net). It never exits 1. That matters because Claude Code reads exit 1 as a non-blocking error unless the hook entry has `onFailure: block`, which exists from Claude Code 2.1.295 on; a copy of `guard.js` without `lib/` beside it would otherwise let `git push origin main` run on an older Claude Code or under a settings file without that line. `onFailure: block` is the second layer, not the first.
+The hook fails closed by itself, with exit 2, in every case it can reach: a tool call that is not JSON, a config file that is missing, unreadable, not JSON or not valid, a log it cannot write, a line it cannot read, a rule that throws, a `lib/` folder it cannot load, and anything else that throws anywhere in the process (an `uncaughtException` handler is the last net). It never exits 1. That matters because Claude Code reads exit 1 as a non-blocking error unless the hook entry has `onFailure: block`, which exists from Claude Code 2.1.295 on; a copy of `guard.js` without `lib/` beside it would otherwise let `git push origin main` run on an older Claude Code or under a settings file without that line. `onFailure: block` is the second layer, not the first.
 
 ## The rules
 
@@ -68,7 +69,7 @@ In the order they run, which is the order v0.1 ran them, with G18 last so it onl
 | docker-01 | docker-outside-postgres | deny | `docker exec`, `docker rm`, `docker system`, `docker run --privileged` or with `/` mounted | docker outside running a local Postgres |
 | G15 | wide-chmod | deny | `chmod 777` or `chmod -R` | wide chmod |
 | G16 | protected-path | deny | Any shell command naming `.claude`, `CLAUDE.md` (and `CLAUDE.local.md`) or `.mcp.json`, always, plus any name in `protectedPaths`. The reason names the config's `operator`, or "the operator" | the session's own rules (.claude/, CLAUDE.md, .mcp.json) are changed by Jake, not by a session. Shell commands can't touch them; to look at one, open it with the Read tool |
-| G17 | unreadable | deny | A tool call that is not JSON; a config file that is missing, unreadable or not JSON, or that fails validation; a command longer than 262,144 characters; a line the parser cannot read (an unclosed quote, an unclosed `$(` or backtick, a heredoc with no end, shells nested more than three deep); a rule that threw; a `lib/` the hook could not load (a missing folder, a rule file that throws when it loads), or anything else that threw in the hook | could not read the tool call; could not read the config: `<why>`; the config is not valid: `<why>`; the command is too long to judge: `<length>` characters; the guard reads at most 262144. Put long content in a file with the Write tool; could not read the command: `<why>`; the guard could not judge the command: `<why>`; the guard could not load: `<why>` |
+| G17 | unreadable | deny | A tool call that is not JSON; a config file that is missing, unreadable or not JSON, or that fails validation; a decision log that cannot be written; a command longer than 262,144 characters; a line the parser cannot read (an unclosed quote, an unclosed `$(` or backtick, a heredoc with no end, shells nested more than three deep); a rule that threw; a `lib/` the hook could not load (a missing folder, a rule file that throws when it loads), or anything else that threw in the hook | could not read the tool call; could not read the config: `<why>`; the config is not valid: `<why>`; could not write the log: `<why>`; the command is too long to judge: `<length>` characters; the guard reads at most 262144. Put long content in a file with the Write tool; could not read the command: `<why>`; the guard could not judge the command: `<why>`; the guard could not load: `<why>` |
 | G18 | browser-automation | deny | Browser automation, by every route below | browser automation is off in this repo: `<what was run, installed or named>`; say what was blocked and stop |
 
 The three rules with pack ids (`aws-cdk-01`, `aws-cdk-02`, `docker-01`) name an AWS CDK app with a dev and a prod profile and a local Postgres in Docker, which is the repository this guard came from. They move into optional packs in round 6, so a repository without those tools never sees them; until then they run for everyone, and the config's `rules` map refuses to turn them off. Each rule is one file in `lib/rules/`, exporting `{ id, name, tier, reason, test }`, where `test` is given the parse and the config; `lib/rules/index.js` is the order.
@@ -87,7 +88,29 @@ To see what the guard sees, from the repository root:
 node bin/antaris-guard.js explain "git status | tail -1"
 ```
 
-prints the config file it read, each command on the line with its program (and whether it is piped or came out of a shell string), the inline code it lifted out, and the decision with its rule and reason. Exit 0 is allow, exit 2 is deny, as the hook does it.
+prints the config file it read, where the log goes, each command on the line with its program (and whether it is piped or came out of a shell string), the inline code it lifted out, and the decision with its rule and reason. Exit 0 is allow, exit 2 is deny, as the hook does it. `explain` never writes the log.
+
+### The decision log
+
+Every decision either hook makes, allows included, is one line appended to `.claude/guard/log.jsonl` before the hook answers, so the file is the session's whole history of commands and subagent calls, in order:
+
+```
+{"v":1,"t":"2026-10-18T06:53:24.108Z","session":"b1c2…","tool":"Bash","decision":"deny","rule":"G07","reason":"direct push to main; open a PR instead","cmd_sha256":"16f8…","prev":"46c0…","hash":"2749…"}
+```
+
+`v` is the shape of the line, `1` for now. The command itself is never written, only its SHA-256, so the log holds no secret a command carried; an allow has a null `rule` and an empty `reason`; an Agent line carries `model`, the model asked for, after `tool`. `hash` is the SHA-256 of the line's JSON without `hash`, keys in that order, and `prev` is the hash of the line before, `genesis` on the first. A tool call the hook could not read is logged too, with session `unknown` and the hash of what came in.
+
+Parallel tool calls run hook processes at the same time, and two lines must never share a `prev`. So the tail is read and the line appended under a lock, a file beside the log created with the `wx` flag and holding the writer's pid. A writer that finds it held waits in 5 ms steps for up to 15 seconds; a lock whose holder is dead is cleared at once, and one older than 60 seconds is cleared as well. Appending takes about a millisecond, so ordinary contention never comes near the limit; a lock held that long means the log is stuck, and the hook blocks with a reason that says so rather than letting the command through unrecorded. A log the hook cannot write for any reason is a block: an allow becomes `G17 could not write the log`, and a deny keeps its own line and adds a second one saying the log failed.
+
+```
+node bin/antaris-guard.js verify-log              # walks the chain; exit 0 whole, exit 1 with the first bad line named
+node bin/antaris-guard.js verify-log --tip <hash> # the same, and the chain must end at that hash
+node bin/antaris-guard.js log                     # lines, size, the tip, and counts by decision, rule, day, session and tool
+```
+
+What the chain proves, and what it does not. `verify-log` proves that every line's hash matches its content and every `prev` is the hash before it, back to `genesis`: a line changed, added or removed by anyone who did not also recompute every line after it is found, and so is a line cut short by a crash. It does not prove the file is the one the hooks wrote. Whoever can write the file can rewrite the whole chain, and the hook has no secret a session could not also read, so no scheme inside the repository can do better. The protection is that a session cannot reach the file: `.claude/` is unreachable to the session's shell (G16) and denied to the editing tools, and the config refuses a `log.path` anywhere but under `.claude/` or a folder in `protectedPaths`, since a log the session's shell can name is a log it can edit. To make a full rewrite visible as well, keep the tip somewhere no session can write: `log` prints it, note it (in the pull request thread, say), and a later `verify-log --tip <hash>` fails if the chain no longer reaches it.
+
+`.claude/guard/` is in this repository's `.gitignore`, so the log the hooks write is never staged. Add the same line to yours (round 7's `init` will). `log.enabled: false` in the config writes nothing.
 
 ### G18, browser automation
 
@@ -112,6 +135,8 @@ Claude Code's settings can cap concurrent subagents, forks, nesting depth, teams
 4. A model other than `sonnet`, `opus` or `haiku` is blocked, `inherit` included. With no pin in settings, a call that names no model is blocked, so every call names one.
 5. After five subagents in a session, the sixth is blocked. The count is one empty file per subagent in the system temp folder, created with the `wx` flag, which the operating system makes atomic, so eight calls at once still let exactly five through.
 
+Every decision, allowed or blocked, is logged with the model asked for, in the same chain as the session's commands; the hook reads the config for the log's path and fails closed, like the Bash guard, when `lib/` or the config cannot be read or the log cannot be written. Its limits stay constants until the `subagents` config key lands.
+
 ## What it does not catch
 
 Be clear about this with whoever reads the guard's log.
@@ -128,7 +153,7 @@ The rule to add to your CLAUDE.md, as this repository's own session rule reads:
 ## Install
 
 1. Copy `guard.js`, `subagent-guard.js` and the `lib/` folder into `.claude/hooks/` in your repository. `guard.js` requires `lib/judge.js` and `lib/config.js` relative to its own location. With `lib/` missing, or a rule file that throws when it loads, the hook blocks every command by itself (G17, exit 2); it does not depend on the settings to do that.
-2. Write `.claude/guard.config.json`. Start from `configs/inventaris.json` and change the lists to fit your repository, following `configs/README.md`. Until the file exists and is valid, the hook blocks every command.
+2. Write `.claude/guard.config.json`. Start from `configs/inventaris.json` and change the lists to fit your repository, following `configs/README.md`. Until the file exists and is valid, the hook blocks every command. Add `.claude/guard/` to `.gitignore`, so the decision log the hooks write there is never staged.
 3. Merge `settings.example.json` into `.claude/settings.json`: the two `PreToolUse` hooks with `onFailure: block` (the second layer, for Claude Code 2.1.295 and later), the subagent caps in `env`, and the denies that keep a session out of its own rules.
 4. Commit all of it. Every session inherits them when it starts.
 5. Read the table above. The three pack-bound rules name the repository this came from (an AWS CDK app and a local Postgres in Docker); they run for everyone until round 6 moves them to packs.
@@ -145,7 +170,8 @@ Nothing to install: the tests run on Node's own test runner (`node --test`), whi
 
 - `test/guard.test.ts` runs the v0.1 table in `test/tables/bash.ts`: 107 commands that must be blocked, 58 that must be allowed, and a tool call that cannot be read. The allowed side matters as much as the blocked side: a commit message that mentions `git push origin main`, a grep for `cdk deploy`, a heredoc with a quote in it, a push to a branch with `main` elsewhere on the line, all pass. The table never shrinks.
 - `test/config.test.ts` covers the config: the defaults, the worked example, where the file is looked for, every kind of invalid file, what the hook does with no file (blocks everything, naming it), each rule that reads a list with a custom value that blocks and one that allows, and the comparison of the v0.1 table under the built-in defaults against the run under `configs/inventaris.json`, which must differ in exactly the five cases that depend on Inventaris's lists.
-- `test/explain.test.ts` runs `bin/antaris-guard.js explain` on an allow, a deny, a shell string with inline code, a line that cannot be read, and a missing or invalid config.
+- `test/explain.test.ts` runs `bin/antaris-guard.js explain` on an allow, a deny, a shell string with inline code, a line that cannot be read, and a missing or invalid config, and checks that it names the log and never writes it.
+- `test/log.test.ts` covers the decision log: the chain and its fixed field order, what `verify` finds (a changed line, a deleted line, an inserted line, a line cut short, the wrong version, a wrong first `prev`, a field the shape does not have), the summary's counts, the hooks logging every decision with the command's hash and never its text (a marker string is logged and must not appear in the file), a missing config logging nothing, logging off, a log that cannot be written blocking an allow and keeping a deny's reason, a log under a protected folder of the config's, the subagent hook in the same chain with its model and failing closed on its own, 64 hook processes appending at once with no two lines sharing a `prev`, the lock cleared after a dead holder and after going stale and the hook waiting out a live one, the `verify-log` and `log` commands, and the `.gitignore` line. Every table run also logs into its own temporary project, and `test/guard.test.ts` verifies that chain after the table.
 - `test/r2.test.ts` runs round 2's table in `test/tables/r2.ts`: the new blocks (the length cap, `find -delete` past every wrapper and runner, the new wrappers reaching the rules that judge per command, an unclosed `$(` or backtick), the three blocks that became allows with the reason each row gives, the five blocks whose reason changed, the blocks that did not move (`$((1+2))`, a case statement inside `$( )`), and the lookalikes that stay allowed (escaped, single-quoted, commented, in a quoted heredoc).
 - `test/timing/at-the-cap.test.ts` judges forty command shapes at a quarter of the length cap and at the cap, each size timed as the best of three runs, and fails if any takes longer than two seconds at the cap or grows faster than the line does between the two sizes. Each shape once took seconds or minutes, or is a cousin of one that did. `npm test` runs this file on its own after the rest of the suite (`npm run test:suite`, then `npm run test:timing`), never beside other files: timed next to the table files, which spawn a hook process per case, a 15 ms shape measured 163 ms on GitHub's runner. `test/syntax.test.ts` checks that every test file sits in one of the three folders the scripts name.
 - `test/linear.test.ts` holds the six one-pass rewrites (G10, G05, docker-01, aws-cdk-01, the push predicate behind G06 and G07, and `inlineCodeOf`) against the code they replaced, over twenty thousand generated inputs each, and fails on the first input where the two disagree. Five are held against v0.1's own code; G05, whose match round 2 also narrowed to the start of a word, is held against the regex that states that match.
@@ -158,7 +184,7 @@ Nothing to install: the tests run on Node's own test runner (`node --test`), whi
 
 ## What comes next
 
-v0.2 keeps every behavior above and adds the parts a second repository needs to adopt the guard without editing code: a config file under `.claude/` (round 2), a decision log the session cannot edit (round 3), the `ask` tier (round 4), reading the script a command runs (round 5), rule packs for toolchains (round 6), a command line with `init`, `explain` and `check` (round 7), and a benchmark with a score per version (round 8). Rounds 1 (the split) and 2 (the config) are done. The design is in [docs/SPEC.md](docs/SPEC.md) and the order of work in [docs/ROADMAP.md](docs/ROADMAP.md).
+v0.2 keeps every behavior above and adds the parts a second repository needs to adopt the guard without editing code: a config file under `.claude/` (round 2), a decision log the session cannot edit (round 3), the `ask` tier (round 4), reading the script a command runs (round 5), rule packs for toolchains (round 6), a command line with `init`, `explain` and `check` (round 7), and a benchmark with a score per version (round 8). Rounds 1 (the split), 2 (the config) and 3 (the log) are done. The design is in [docs/SPEC.md](docs/SPEC.md) and the order of work in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Provenance
 

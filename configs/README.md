@@ -32,8 +32,9 @@ non-empty strings with no whitespace in them.
 | `credentialPaths` | G13 | `["~/.aws", "~/.ssh", "~/.config", "~/.netrc", "~/.npmrc"]` | Credential directories and files, matched as a prefix anywhere in the line, so `~/.aws` covers `~/.aws/credentials`. |
 | `blockedPrograms` | G01 | `["sudo", "su", "curl", "wget", "ssh", "scp", "nc", "ncat", "telnet", "dd", "mkfs", "crontab", "eval", "base64", "xxd"]` | Programs that may not run, matched as a command anywhere in the line. The defaults leave `python`, `python3`, `pip` and `pip3` out because most repositories need them; `inventaris.json` adds them back. |
 | `rules` | the judge | `{}` | A map of rule id to `"deny"` or `"off"`. `"off"` turns an optional rule off; `"deny"` is the default and changes nothing this version. The rules that are never off refuse `"off"`: G02, G06, G07, G09, G10, G12, G16, G17. The three pack rules (`aws-cdk-01`, `aws-cdk-02`, `docker-01`) refuse it too until packs arrive. An id the guard does not have fails. `"ask"` fails; the ask tier is a later version. |
+| `log` | both hooks | `{ "enabled": true, "path": ".claude/guard/log.jsonl" }` | The decision log. `enabled: false` writes nothing. `path` is relative to the project root and must sit under `.claude/` or under a folder that `protectedPaths` names (an entry ending in `/`): a log the session's shell can name is a log it can edit, so an absolute path, a path with `..` in it, a path at the project root or under any other folder fails validation, naming the path. The two keys are the only ones; anything else under `log` fails. |
 
-Keys from the design that later versions read (`remotes`, `askPrograms`, `packs`, `scan`, `log`,
+Keys from the design that later versions read (`remotes`, `askPrograms`, `packs`, `scan`,
 `subagents`) fail validation until the version that reads them lands, so a key the guard does not
 act on never looks like a rule in force.
 
@@ -43,7 +44,14 @@ act on never looks like a rule in force.
 node bin/antaris-guard.js explain "git status | tail -1"
 ```
 
-prints the config file it read, the commands on the line with their programs, the shell strings
-and inline code it lifted out, and the decision with its rule and reason. It reads the config the
-way the hook does, from `CLAUDE_PROJECT_DIR` or the working directory. Exit 0 is allow, exit 2 is
-deny, the same as the hook.
+prints the config file it read, where the log goes, the commands on the line with their programs,
+the shell strings and inline code it lifted out, and the decision with its rule and reason. It
+reads the config the way the hook does, from `CLAUDE_PROJECT_DIR` or the working directory. Exit 0
+is allow, exit 2 is deny, the same as the hook. `verify-log` and `log` read the same config to find
+the log:
+
+```
+node bin/antaris-guard.js verify-log              # walks the chain, names the first bad line
+node bin/antaris-guard.js verify-log --tip <hash> # and requires the chain to end at that hash
+node bin/antaris-guard.js log                     # the tip, the size, and counts by decision, rule, day, session and tool
+```

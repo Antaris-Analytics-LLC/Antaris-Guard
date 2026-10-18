@@ -155,19 +155,40 @@ Every judgment appends one line to `log.path` (default `.claude/guard/log.jsonl`
 under a protected path, so the session's shell cannot touch it; the hook process writes it):
 
 ```json
-{"t":"2026-10-17T20:14:03.211Z","session":"b1c2…","tool":"Bash","decision":"deny","rule":"G07","reason":"direct push to main; open a PR instead","cmd_sha256":"…","prev":"…","hash":"…"}
+{"v":1,"t":"2026-10-17T20:14:03.211Z","session":"b1c2…","tool":"Bash","decision":"deny","rule":"G07","reason":"direct push to main; open a PR instead","cmd_sha256":"…","prev":"…","hash":"…"}
 ```
 
-`hash` is SHA-256 over the line's fields in a fixed order plus `prev`; the first line's `prev` is
-the string `genesis`. Every decision is logged, allows included, so the chain is the session's
-whole command history and a gap is visible. The command itself is not stored, only its hash, so
-the log holds no secret a command carried. `antaris-guard verify-log` walks the chain and
-reports the first break. `antaris-guard log` summarizes: decisions by rule, by day, by session.
+`v` is the shape of the line, `1` for now, first on every line, so a later shape can be told
+apart. `hash` is SHA-256 over the line's JSON text without `hash`, keys in the order shown; the
+first line's `prev` is the string `genesis`. Every decision is logged, allows included, so the
+chain is the session's whole command history and a gap is visible. On an allow, `rule` is null
+and `reason` is empty. The command itself is not stored, only its hash, so the log holds no
+secret a command carried.
+
+Hook processes run at the same time when a session makes parallel tool calls, and two lines
+must never share a `prev`. The tail is read and the line appended under a lock file beside the
+log, created with the `wx` flag and holding the writer's pid; a writer waits on it for up to 15
+seconds, a lock whose holder is dead is cleared at once, and one older than 60 seconds is
+cleared as well. Ordinary contention never comes near the limit; a lock held that long means
+the log is stuck, and that is a `G17` block that says so.
+
+`antaris-guard verify-log` walks the chain and reports the first break; with `--tip <hash>` it
+also requires the chain to end at that hash. `antaris-guard log` summarizes: decisions by rule,
+by day, by session, by tool, and prints the tip. What the chain proves: that no line was
+changed, added or removed by anyone who did not also recompute every line after it. What it
+does not prove: that the file is the one the hooks wrote, since whoever can write the file can
+rewrite the whole chain, and the hook has no secret a session could not also read. The
+protection is that a session cannot reach the file: `log.path` must sit under `.claude/` or a
+folder `protectedPaths` names, and a config that points anywhere else fails validation, naming
+the path. A tip the operator keeps where no session can write (the pull request thread) makes a
+full rewrite visible to a later `verify-log --tip`.
+
 A log the hook cannot write is itself a block (`G17`), because a guard that cannot keep its
 record is not guarding. `init` adds `.claude/guard/` to the repository's `.gitignore`, and
 `check` confirms the line is there, so a `git add -A` never stages the log.
 
-Subagent decisions log the same way, with `tool` of `Agent` and the model asked for.
+Subagent decisions log the same way, with `tool` of `Agent` and `model`, the model asked for,
+after `tool`; the two hooks write one chain.
 
 ## 6. Reading the script a command runs
 

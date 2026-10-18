@@ -1,5 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { INVENTARIS, inventarisProject, projectWith, runExplain } from "./harness.ts";
 
 /*
@@ -10,7 +12,7 @@ describe("antaris-guard explain", () => {
   it("prints the parse and an allow, exit 0", () => {
     const r = runExplain(["explain", "git status | tail -1"]);
     assert.equal(r.code, 0, r.stderr);
-    assert.match(r.stdout, /^config: .*guard\.config\.json\n/);
+    assert.match(r.stdout, /^config: .*guard\.config\.json\nlog: .*guard\/log\.jsonl\n/);
     assert.match(r.stdout, /command: git status \| tail -1\n/);
     assert.match(r.stdout, /commands:\n {3}1\. git status {4}\[program git\]\n {3}2\. tail -1 {4}\[program tail, piped\]\n/);
     assert.match(r.stdout, /inline code: none\n/);
@@ -54,6 +56,14 @@ describe("antaris-guard explain", () => {
   it("reads the config under CLAUDE_PROJECT_DIR", () => {
     const r = runExplain(["explain", "ls"], inventarisProject());
     assert.ok(r.stdout.startsWith(`config: ${inventarisProject()}`), r.stdout);
+  });
+
+  it("says where the log goes, or that it is off, and never writes it", () => {
+    const off = projectWith({ ...INVENTARIS, log: { enabled: false } });
+    assert.match(runExplain(["explain", "ls"], off).stdout, /\nlog: off\n/);
+    const on = projectWith(INVENTARIS);
+    assert.match(runExplain(["explain", "git push origin main"], on).stdout, /\nlog: .*log\.jsonl\n/);
+    assert.ok(!fs.existsSync(path.join(on, ".claude", "guard")), "explain wrote the log");
   });
 
   it("prints usage and exits 1 without a command", () => {

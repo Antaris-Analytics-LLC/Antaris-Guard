@@ -1,7 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { CURRENT, runGuard, runGuardRaw } from "./harness.ts";
+import fs from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { CURRENT, ROOT, inventarisProject, logOf, runGuard, runGuardRaw } from "./harness.ts";
 import { ALLOWED, BLOCKED, UNREADABLE_TOOL_CALL } from "./tables/bash.ts";
+
+const require = createRequire(import.meta.url);
+const { verify } = require(path.join(ROOT, "lib", "log.js"));
 
 /*
  * The Bash guard, run as Claude Code runs it: the tool call as JSON on stdin, exit 2 with a
@@ -42,5 +48,13 @@ describe("the Bash guard", () => {
       const r = runGuard(CURRENT.guard, command);
       assert.match(r.reason, /^(G\d\d|aws-cdk-\d\d|docker-\d\d) [a-z-]+: /, `no rule id on: ${r.stderr}`);
     }
+  });
+
+  it("logged every run above into this file's project, in one chain that holds", () => {
+    const file = logOf(inventarisProject());
+    const verdict = verify(file);
+    assert.equal(verdict.ok, true, JSON.stringify(verdict));
+    assert.ok(verdict.lines >= BLOCKED.length * 2 + ALLOWED.length + 1, `${verdict.lines} lines`);
+    assert.ok(!fs.existsSync(`${file}.lock`), "the lock was left behind");
   });
 });
