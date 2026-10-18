@@ -55,8 +55,26 @@ export function runGuardRaw(file: string, input: string, project: string = inven
   return { allowed: run.status === 0, code: run.status, reason, stderr };
 }
 
+/** A Bash tool call as Claude Code sends it, with the session id the log records. */
+export const bashCall = (command: string, session = "test-session"): string => JSON.stringify({ session_id: session, hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command } });
+
 /** The Bash guard at `file`, given a Bash tool call for `command`. */
-export const runGuard = (file: string, command: string, project?: string): GuardRun => runGuardRaw(file, JSON.stringify({ tool_name: "Bash", tool_input: { command } }), project);
+export const runGuard = (file: string, command: string, project?: string): GuardRun => runGuardRaw(file, bashCall(command), project);
+
+/** The Bash guard at `file`, started once per command at the same time, as parallel tool calls run it; resolves to each run's exit code and stderr. */
+export function runGuardParallel(file: string, commands: string[], project: string = inventarisProject()): Promise<{ code: number | null; stderr: string }[]> {
+  return Promise.all(commands.map((command) => new Promise<{ code: number | null; stderr: string }>((resolve) => {
+    const child = spawn(process.execPath, [file], { env: { ...process.env, CLAUDE_PROJECT_DIR: project }, stdio: ["pipe", "ignore", "pipe"] });
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (d: string) => (stderr += d));
+    child.on("close", (code) => resolve({ code, stderr: stderr.trim() }));
+    child.stdin.end(bashCall(command));
+  })));
+}
+
+/** The decision log of a project, as the config under it places it. */
+export const logOf = (project: string): string => path.join(project, ".claude", "guard", "log.jsonl");
 
 /** The Bash guard at `file`, given a Bash tool call for `command` whose stdin carries `cwd` and with no CLAUDE_PROJECT_DIR set. */
 export function runGuardWithCwd(file: string, command: string, cwd: string): GuardRun {
@@ -81,10 +99,14 @@ export const stripId = (stderr: string): string => stderr.replace(/^guard: block
 /** A command run by n shells, each handing the next its string: bash -c "bash -c \"...\"". */
 export const nest = (n: number, inner: string): string => (n === 0 ? inner : nest(n - 1, `bash -c ${JSON.stringify(inner)}`));
 
-/** An environment whose temp folder is empty and its own, so a subagent count starts at zero. Linux and macOS read TMPDIR; Windows reads TEMP and TMP. */
-export function tempEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
+/**
+ * An environment whose temp folder is empty and its own, so a subagent count starts at zero, and
+ * whose project is the worked example, so the subagent hook finds a config and a log. Linux and
+ * macOS read TMPDIR; Windows reads TEMP and TMP.
+ */
+export function tempEnv(extra: Record<string, string>, project: string = inventarisProject()): NodeJS.ProcessEnv {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "antaris-guard-test-"));
-  return { ...process.env, TMPDIR: dir, TEMP: dir, TMP: dir, ...extra };
+  return { ...process.env, TMPDIR: dir, TEMP: dir, TMP: dir, CLAUDE_PROJECT_DIR: project, ...extra };
 }
 
 export type SubagentRun = { code: number | null; stderr: string };

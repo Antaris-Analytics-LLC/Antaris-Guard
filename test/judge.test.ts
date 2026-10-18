@@ -151,14 +151,21 @@ describe("the rules", () => {
     assert.equal(UNREADABLE.test, null);
   });
 
-  it("G17's words in guard.js, which must work without lib/, match lib/rules/g17-unreadable.js", () => {
-    const source = fs.readFileSync(path.join(ROOT, "guard.js"), "utf8");
+  it("G17's words in guard.js and subagent-guard.js, which must work without lib/, match lib/rules/g17-unreadable.js", () => {
     const err = new Error("why");
-    assert.ok(source.includes(`"${UNREADABLE.id} ${UNREADABLE.name}"`), "guard.js spells the id and name differently");
-    assert.ok(source.includes(`block("${UNREADABLE.toolCall()}")`), "guard.js spells the tool-call reason differently");
-    assert.ok(source.includes("`" + UNREADABLE.load(err).replace("why", "${message(err)}") + "`"), "guard.js spells the load reason differently");
-    assert.ok(source.includes("`" + UNREADABLE.rule(err).replace("why", "${message(err)}") + "`"), "guard.js spells the judge reason differently");
-    assert.ok(source.includes("`" + UNREADABLE.readConfig(err).replace("why", "${message(err)}") + "`"), "guard.js spells the config reason differently");
+    const spelled = (reason: string) => "`" + reason.replace("why", "${message(err)}") + "`";
+    const guard = fs.readFileSync(path.join(ROOT, "guard.js"), "utf8");
+    assert.ok(guard.includes(`"${UNREADABLE.id} ${UNREADABLE.name}"`), "guard.js spells the id and name differently");
+    assert.ok(guard.includes(`"${UNREADABLE.toolCall()}"`), "guard.js spells the tool-call reason differently");
+    for (const [name, reason] of [["load", UNREADABLE.load(err)], ["judge", UNREADABLE.rule(err)], ["config-read", UNREADABLE.readConfig(err)], ["config", UNREADABLE.config(err)], ["log", UNREADABLE.writeLog(err)]]) {
+      assert.ok(guard.includes(spelled(reason)), `guard.js spells the ${name} reason differently`);
+    }
+    // The subagent hook prints no rule ids (its stderr shape is v0.1's), but the same words for the same failures.
+    const subagent = fs.readFileSync(path.join(ROOT, "subagent-guard.js"), "utf8");
+    assert.ok(subagent.includes(`"${UNREADABLE.toolCall()}"`), "subagent-guard.js spells the tool-call reason differently");
+    for (const [name, reason] of [["load", UNREADABLE.load(err)], ["config-read", UNREADABLE.readConfig(err)], ["config", UNREADABLE.config(err)], ["log", UNREADABLE.writeLog(err)]]) {
+      assert.ok(subagent.includes(spelled(reason)), `subagent-guard.js spells the ${name} reason differently`);
+    }
     assert.deepEqual(UNREADABLE.reasons, [
       "could not read the tool call",
       "could not read the command: <why>",
@@ -167,8 +174,10 @@ describe("the rules", () => {
       "could not read the config: <why>",
       "the config is not valid: <why>",
       "the command is too long to judge: <length> characters; the guard reads at most <limit>. Put long content in a file with the Write tool",
+      "could not write the log: <why>",
     ]);
     assert.equal(UNREADABLE.config(err), "the config is not valid: why");
+    assert.equal(UNREADABLE.writeLog(err), "could not write the log: why");
     assert.equal(UNREADABLE.tooLong(300000, 262144), "the command is too long to judge: 300000 characters; the guard reads at most 262144. Put long content in a file with the Write tool");
   });
 

@@ -101,7 +101,7 @@ describe("validation", () => {
     ["an unknown key", { version: 1, foo: 1 }, /unknown key "foo"/],
     ["a $comment key", { version: 1, $comment: "x" }, /unknown key "\$comment"/],
     ["a key a later round reads", { version: 1, packs: ["node"] }, /unknown key "packs"/],
-    ["another key a later round reads", { version: 1, log: { enabled: true } }, /unknown key "log"/],
+    ["another key a later round reads", { version: 1, scan: { enabled: true } }, /unknown key "scan"/],
     ["an empty operator", { version: 1, operator: " " }, /operator must be a non-empty string/],
     ["an operator that is not a string", { version: 1, operator: 7 }, /operator must be a non-empty string/],
     ["a list given as a string", { version: 1, blockedPrograms: "sudo" }, /blockedPrograms must be a list of strings/],
@@ -142,7 +142,38 @@ describe("validation", () => {
 
   it("names the never-off set the spec gives, G24 to join when it lands", () => {
     assert.deepEqual(config.NEVER_OFF, ["G02", "G06", "G07", "G09", "G10", "G12", "G16", "G17"]);
-    assert.deepEqual(config.KEYS, ["version", "operator", "protectedBranches", "protectedPaths", "secretPaths", "secretEnv", "credentialPaths", "blockedPrograms", "rules"]);
+    assert.deepEqual(config.KEYS, ["version", "operator", "protectedBranches", "protectedPaths", "secretPaths", "secretEnv", "credentialPaths", "blockedPrograms", "rules", "log"]);
+  });
+
+  const badLog: [name: string, raw: unknown, message: RegExp][] = [
+    ["log as a string", { version: 1, log: "on" }, /log must be an object with enabled and path/],
+    ["an unknown log key", { version: 1, log: { enabled: true, rotate: true } }, /unknown key "log\.rotate"/],
+    ["log.enabled as a string", { version: 1, log: { enabled: "yes" } }, /log\.enabled must be true or false/],
+    ["an empty log.path", { version: 1, log: { path: "" } }, /log\.path must be a non-empty string/],
+    ["log.path as a number", { version: 1, log: { path: 7 } }, /log\.path must be a non-empty string/],
+    ["an absolute log.path", { version: 1, log: { path: "/var/log/guard.jsonl" } }, /log\.path must be under \.claude\/ or a folder in protectedPaths, not "\/var\/log\/guard\.jsonl": an absolute path/],
+    ["a Windows absolute log.path", { version: 1, log: { path: "C:\\guard.jsonl" } }, /an absolute path/],
+    ["a log.path with .. in it", { version: 1, log: { path: ".claude/../guard.jsonl" } }, /a path with \.\. in it can leave the protected folder/],
+    ["a log.path at the project root", { version: 1, log: { path: "guard.jsonl" } }, /not "guard\.jsonl": a log the session's shell can name is a log it can edit/],
+    ["a log.path under an unprotected folder", { version: 1, log: { path: "logs/guard.jsonl" } }, /a log the session's shell can name is a log it can edit/],
+    ["a log.path under a protected file, which is not a folder", { version: 1, protectedPaths: ["CLAUDE.md"], log: { path: "CLAUDE.md/guard.jsonl" } }, /a log the session's shell can name/],
+    ["a log.path that is the folder itself", { version: 1, log: { path: ".claude/" } }, /a log the session's shell can name/],
+    ["a log.path that is a folder under .claude", { version: 1, log: { path: ".claude/guard/" } }, /it names a folder, not a file/],
+  ];
+  for (const [name, raw, message] of badLog) {
+    it(`refuses ${name}`, () => {
+      assert.throws(() => config.validate(raw), message);
+    });
+  }
+
+  it("accepts a log under .claude/ or under a folder in protectedPaths, with the defaults filled in", () => {
+    assert.deepEqual(config.validate({ version: 1 }).log, { enabled: true, path: ".claude/guard/log.jsonl" });
+    assert.deepEqual(config.validate({ version: 1, log: { enabled: false } }).log, { enabled: false, path: ".claude/guard/log.jsonl" });
+    assert.deepEqual(config.validate({ version: 1, log: { path: ".claude/decisions.jsonl" } }).log, { enabled: true, path: ".claude/decisions.jsonl" });
+    assert.deepEqual(config.validate({ version: 1, protectedPaths: ["secrets/"], log: { path: "secrets/guard/log.jsonl" } }).log, { enabled: true, path: "secrets/guard/log.jsonl" });
+    assert.deepEqual(config.validate({ version: 1, log: { path: ".claude\\guard\\log.jsonl" } }).log, { enabled: true, path: ".claude/guard/log.jsonl" });
+    assert.deepEqual(config.validate(INVENTARIS).log, { enabled: true, path: ".claude/guard/log.jsonl" });
+    assert.deepEqual(config.LOG_KEYS, ["enabled", "path"]);
   });
 });
 
