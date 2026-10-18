@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { ROOT, nest } from "./harness.ts";
@@ -119,6 +120,16 @@ describe("the rules", () => {
     assert.ok(ids.includes("G17"));
     assert.equal(UNREADABLE.id, "G17");
     assert.equal(UNREADABLE.test, null);
+  });
+
+  it("G17's words in guard.js, which must work without lib/, match lib/rules/g17-unreadable.js", () => {
+    const source = fs.readFileSync(path.join(ROOT, "guard.js"), "utf8");
+    const err = new Error("why");
+    assert.ok(source.includes(`"${UNREADABLE.id} ${UNREADABLE.name}"`), "guard.js spells the id and name differently");
+    assert.ok(source.includes(`block("${UNREADABLE.toolCall()}")`), "guard.js spells the tool-call reason differently");
+    assert.ok(source.includes("`" + UNREADABLE.load(err).replace("why", "${message(err)}") + "`"), "guard.js spells the load reason differently");
+    assert.ok(source.includes("`" + UNREADABLE.rule(err).replace("why", "${message(err)}") + "`"), "guard.js spells the judge reason differently");
+    assert.deepEqual(UNREADABLE.reasons, ["could not read the tool call", "could not read the command: <why>", "the guard could not judge the command: <why>", "the guard could not load: <why>"]);
   });
 
   it("print no em dashes", () => {

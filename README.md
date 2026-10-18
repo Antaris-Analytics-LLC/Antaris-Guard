@@ -33,9 +33,12 @@ A block is one line on stderr, with the rule's id and name at the front of the r
 guard: blocked (G07 push-to-protected: direct push to main; open a PR instead): git push origin main
 guard: blocked (G18 browser-automation: browser automation is off in this repo: playwright run through npx; say what was blocked and stop): npx playwright test
 guard: blocked (G17 unreadable: could not read the command: an unclosed quote): echo 'unclosed
+guard: blocked (G17 unreadable: the guard could not load: Cannot find module '/repo/.claude/hooks/lib/judge.js' Require stack: - /repo/.claude/hooks/guard.js)
 ```
 
 An allow is silence: exit 0, nothing printed, and Claude Code's own permission settings apply as usual.
+
+The hook fails closed by itself, with exit 2, in every case it can reach: a tool call that is not JSON, a line it cannot read, a rule that throws, a `lib/` folder it cannot load, and anything else that throws anywhere in the process (an `uncaughtException` handler is the last net). It never exits 1. That matters because Claude Code reads exit 1 as a non-blocking error unless the hook entry has `onFailure: block`, which exists from Claude Code 2.1.295 on; a copy of `guard.js` without `lib/` beside it would otherwise let `git push origin main` run on an older Claude Code or under a settings file without that line. `onFailure: block` is the second layer, not the first.
 
 ## The rules
 
@@ -62,7 +65,7 @@ In the order they run, which is the order v0.1 ran them, with G18 last so it onl
 | docker-01 | docker-outside-postgres | deny | `docker exec`, `docker rm`, `docker system`, `docker run --privileged` or with `/` mounted | docker outside running a local Postgres |
 | G15 | wide-chmod | deny | `chmod 777` or `chmod -R` | wide chmod |
 | G16 | protected-path | deny | Any shell command naming `.claude`, `CLAUDE.md` or `.mcp.json` | the session's own rules (.claude/, CLAUDE.md, .mcp.json) are changed by Jake, not by a session. Shell commands can't touch them; to look at one, open it with the Read tool |
-| G17 | unreadable | deny | A tool call that is not JSON; a line the parser cannot read (an unclosed quote, a heredoc with no end, shells nested more than three deep); a rule that threw | could not read the tool call; could not read the command: `<why>`; the guard could not judge the command: `<why>` |
+| G17 | unreadable | deny | A tool call that is not JSON; a line the parser cannot read (an unclosed quote, a heredoc with no end, shells nested more than three deep); a rule that threw; a `lib/` the hook could not load (a missing folder, a rule file that throws when it loads), or anything else that threw in the hook | could not read the tool call; could not read the command: `<why>`; the guard could not judge the command: `<why>`; the guard could not load: `<why>` |
 | G18 | browser-automation | deny | Browser automation, by every route below | browser automation is off in this repo: `<what was run, installed or named>`; say what was blocked and stop |
 
 The three rules with pack ids (`aws-cdk-01`, `aws-cdk-02`, `docker-01`) name an AWS CDK app with a dev and a prod profile and a local Postgres in Docker, which is the repository this guard came from. They move into optional packs in round 6, so a repository without those tools never sees them; until then they run for everyone. The lists inside G01, G07, G09, G12, G13 and G16 move to a config file in round 2. Each rule is one file in `lib/rules/`, exporting `{ id, name, tier, reason, test }`; `lib/rules/index.js` is the order.
@@ -75,7 +78,7 @@ Nothing a session does needs a browser, and a browser binary or an automation fr
 - **By package.** The thing `npx`, `npm exec`, `pnpm exec`, `pnpm dlx`, `yarn`, `yarn dlx`, `bunx`, `bun x`, `deno run` and `corepack` run, including `-p`/`--package` values and versions, and the packages `npm install`, `pnpm add`, `yarn add`, `bun add`, `deno add`, `pip install`, `apt install`, `brew install` and the other managers add, when the name contains `playwright`, `puppeteer`, `selenium`, `webdriver`, `webdriverio`, `wdio`, `chromedriver`, `geckodriver`, `msedgedriver`, `chromium`, `chrome`, `cypress`, `nightwatch` or `testcafe` as a word. That is `@playwright/test`, `playwright-core`, `puppeteer-core`, `@puppeteer/browsers`, `selenium-webdriver`, `npm:puppeteer`, and also `eslint-plugin-playwright`. A script under `node_modules/` with one of those names in its path, run with `node`, `tsx` or `bun`, counts too, as does a module preloaded with `-r` or `--import`.
 - **By inline code.** Code handed to `node -e`, `tsx --eval`, `bun -e`, `deno eval` and the rest, when it names one of those packages, a headless flag, the preinstalled browser path, or one of the two variables below.
 - **By variable.** `PLAYWRIGHT_BROWSERS_PATH=` or `PUPPETEER_EXECUTABLE_PATH=` set on a command, through `export` or `env` too.
-- **By flag.** `--headless`, `--headless=anything` or `-headless` on any command, whatever the program.
+- **By flag.** `--headless`, `--headless=anything` or `-headless` on any command, whatever the program. That includes programs that are not browsers, LibreOffice's `--headless` among them. On purpose: the guard does not keep a list of which headless programs are fine, so it fails closed.
 - **By path.** `/opt/pw-browsers` at the start of any word.
 
 Allowed, because none of those is any of these: searching for the word (`grep -rn playwright src`, `rg "chromium|puppeteer" packages`, a grep for `--headless` or `/opt/pw-browsers` as a pattern), a commit message or a log search that contains it, a file named after it (`cat playwright.config.ts`), reading a variable (`echo $PLAYWRIGHT_BROWSERS_PATH`), and uninstalling (`npm uninstall playwright`). The table in `test/tables/g18.ts` has 82 blocked and 28 allowed cases, one or more per route.
@@ -104,8 +107,8 @@ The line to add to your CLAUDE.md, in whatever words fit your repository:
 
 ## Install
 
-1. Copy `guard.js`, `subagent-guard.js` and the `lib/` folder into `.claude/hooks/` in your repository. `guard.js` requires `lib/judge.js` relative to its own location; with `lib/` missing it fails to load, and `onFailure: block` then blocks every command, which is the failure you want.
-2. Merge `settings.example.json` into `.claude/settings.json`: the two `PreToolUse` hooks with `onFailure: block`, the subagent caps in `env`, and the denies that keep a session out of its own rules.
+1. Copy `guard.js`, `subagent-guard.js` and the `lib/` folder into `.claude/hooks/` in your repository. `guard.js` requires `lib/judge.js` relative to its own location. With `lib/` missing, or a rule file that throws when it loads, the hook blocks every command by itself (G17, exit 2); it does not depend on the settings to do that.
+2. Merge `settings.example.json` into `.claude/settings.json`: the two `PreToolUse` hooks with `onFailure: block` (the second layer, for Claude Code 2.1.295 and later), the subagent caps in `env`, and the denies that keep a session out of its own rules.
 3. Commit all of it. Every session inherits them when it starts.
 4. Read the table above. The three pack-bound rules and the lists inside G01, G07, G09, G12, G13 and G16 name the repository this came from; change them in `lib/rules/` if they don't fit, until round 2 moves them to config.
 
@@ -123,8 +126,9 @@ Nothing to install: the tests run on Node's own test runner (`node --test`), whi
 - `test/subagent-guard.test.ts` runs the subagent guard through its model, fork, isolation and nesting rules, the five-per-session count, and eight parallel calls (18 cases, in `test/tables/subagent.ts`).
 - `test/rules/g18.test.ts` runs G18's own table, and checks that every block there carries G18's id and not some other rule's.
 - `test/compare.test.ts` replays every case in every table through the frozen v0.1 hooks under `bench/versions/v0.1/` and the current ones, and requires the same decision and the same stderr line once the rule id is stripped. The only differences it accepts are G18's blocked cases, and it requires each of them to be exactly a v0.1 allow turned into a G18 deny. It also pins the frozen files' SHA-256.
+- `test/load.test.ts` copies `guard.js` into a temp folder without `lib/`, with a rule file that throws when it loads, with a rule file that does not parse, with a `judge.js` of the wrong shape, with a `judge()` that throws, and with a throw on the next tick outside every `try`, and requires a G17 block with exit 2 from each; a whole copy with `lib/` must judge as the original does.
 - `test/syntax.test.ts` runs `node --check` on every JavaScript file in the repository.
-- `test/judge.test.ts` covers `judge()` as a library: the shape of a decision, G17 for a line the parser cannot read and for a rule that throws, and the rule order.
+- `test/judge.test.ts` covers `judge()` as a library: the shape of a decision, G17 for a line the parser cannot read and for a rule that throws, the rule order, and that the G17 words spelled out in `guard.js` (which has to work without `lib/`) match `lib/rules/g17-unreadable.js`.
 
 ## What comes next
 
