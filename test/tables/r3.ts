@@ -122,6 +122,19 @@ export const UNCHANGED: [command: string, reason: RegExp][] = [
   ["mv ~/.claude/uploads/x ./", /session's own rules/],
   ["node ~/.claude/uploads/script.js", /session's own rules/],
   ["tee ~/.claude/uploads/x", /session's own rules/],
+  // R3 follow-up 1. cp that makes links is not a read: the link it leaves in the project lets a later
+  // plain write change the upload. Blocked by v0.1 too, since they name the folder; against the merged
+  // R3, which let them through, these are new blocks.
+  ["cp -l ~/.claude/uploads/report.csv ./report.csv", /session's own rules/],
+  ["cp -s ~/.claude/uploads/report.csv ./report.csv", /session's own rules/],
+  ["cp -rs ~/.claude/uploads ./uploads", /session's own rules/],
+  ["cp -al ~/.claude/uploads/report.csv ./report.csv", /session's own rules/],
+  ["cp --link ~/.claude/uploads/report.csv ./report.csv", /session's own rules/],
+  ["cp --symbolic-link ~/.claude/uploads/report.csv ./report.csv", /session's own rules/],
+  ["cp --sym ~/.claude/uploads/report.csv ./report.csv", /session's own rules/],
+  ["cp --li ~/.claude/uploads/report.csv ./report.csv", /session's own rules/],
+  ["cp ~/.claude/uploads/report.csv ./report.csv -s", /session's own rules/],
+  ["cp -t ./work -l ~/.claude/uploads/report.csv", /session's own rules/],
 ];
 
 export const ALLOWED: string[] = [
