@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { INVENTARIS, ROOT } from "./harness.ts";
+import { INVENTARIS, ROOT } from "../harness.ts";
 
 /*
  * The guard answers in time proportional to the line. Every shape here once took seconds or
@@ -11,6 +11,11 @@ import { INVENTARIS, ROOT } from "./harness.ts";
  * Each is judged at a quarter of the cap and at the cap; the time at the cap must stay under two
  * seconds, and must grow no faster than the line does (a floor of 25 ms keeps noise out of the
  * ratio). A quadratic shape would grow sixteen times between the two sizes and fail both.
+ *
+ * This file lives in test/timing/ and npm test runs it on its own, after the rest of the suite,
+ * never beside other files: timed beside the table files, which spawn a hook process per case,
+ * a 15 ms shape measured 163 ms on GitHub's runner and failed the growth check. Each size is
+ * timed as the best of three runs, so one scheduling hiccup does not make a quadratic of a line.
  */
 const require = createRequire(import.meta.url);
 const { judge, MAX_COMMAND_LENGTH } = require(path.join(ROOT, "lib", "judge.js"));
@@ -20,6 +25,7 @@ const QUARTER = CAP / 4;
 const LIMIT_MS = 2000;
 const GROWTH = 6;
 const FLOOR_MS = 25;
+const RUNS = 3;
 const DOLLAR_PAREN = "$" + "(";
 const BACKTICK = String.fromCharCode(96);
 
@@ -70,17 +76,25 @@ export const SHAPES: Record<string, (n: number) => string> = {
 };
 
 describe("judge() at the length cap", () => {
-  const time = (command: string): number => { const t0 = process.hrtime.bigint(); judge(command, INVENTARIS); return Number(process.hrtime.bigint() - t0) / 1e6; };
+  /** The best of RUNS timings of one judgment, in milliseconds. */
+  const time = (command: string): number => {
+    let best = Infinity;
+    for (let run = 0; run < RUNS; run++) {
+      const t0 = process.hrtime.bigint();
+      judge(command, INVENTARIS);
+      best = Math.min(best, Number(process.hrtime.bigint() - t0) / 1e6);
+    }
+    return best;
+  };
 
   for (const [name, shape] of Object.entries(SHAPES)) {
     it(`${name}: under ${LIMIT_MS} ms at the cap, and growing no faster than the line`, (t) => {
       const small = shape(QUARTER), large = shape(CAP);
       assert.ok(small.length <= QUARTER && large.length <= CAP, `${name}: ${small.length} and ${large.length} characters`);
       assert.ok(large.length > CAP - 64, `${name}: the shape does not reach the cap (${large.length})`);
-      time(small); // warm up the engine once
       const quarter = time(small), cap = time(large);
       const verdict = judge(large, INVENTARIS);
-      t.diagnostic(`${name}: ${quarter.toFixed(0)} ms at ${QUARTER}, ${cap.toFixed(0)} ms at ${CAP}, ${verdict.decision}${verdict.rule ? ` ${verdict.rule}` : ""}`);
+      t.diagnostic(`${name}: ${quarter.toFixed(0)} ms at ${QUARTER}, ${cap.toFixed(0)} ms at ${CAP}, best of ${RUNS}, ${verdict.decision}${verdict.rule ? ` ${verdict.rule}` : ""}`);
       assert.ok(cap < LIMIT_MS, `${name}: ${cap.toFixed(0)} ms at the cap`);
       assert.ok(cap <= GROWTH * Math.max(quarter, FLOOR_MS), `${name}: ${quarter.toFixed(0)} ms at a quarter of the cap, ${cap.toFixed(0)} ms at the cap`);
     });
