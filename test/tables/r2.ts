@@ -61,6 +61,22 @@ export const BLOCKED: [command: string, reason: RegExp][] = [
   ["setsid bash -c 'git push origin main'", /^G07 push-to-protected: direct push to main; open a PR instead$/],
   ["cat scripts/setup.txt | busybox sh", /^G11 pipe-into-interpreter: piping into an interpreter$/],
   ["cat scripts/setup.txt | doas bash", /piping into an interpreter/],
+  // A shell string behind a runner is read as commands: xargs, npx and npm exec running bash -c, and the strings
+  // npx -c, npx --call and npm exec -c hand to a shell. v0.1 never read these; the string was one word to it.
+  ["echo x | xargs bash -c 'git push --force origin main'", /^G06 force-push: force push$/],
+  ["echo x | xargs sh -c 'git push origin main'", /^G07 push-to-protected: direct push to main; open a PR instead$/],
+  ["xargs -I{} sh -c 'git push origin main'", /direct push to main/],
+  ["echo x | xargs bash -c 'npx cdk deploy'", /^aws-cdk-01 cdk-deploy-or-destroy: cdk deploy or destroy/],
+  ["echo x | xargs sh -c 'cat .env'", /^G12 reads-secret-file: reading a secret file$/],
+  ["npx bash -c 'git push origin main'", /direct push to main/],
+  ["npm exec -- bash -c 'git push origin main'", /direct push to main/],
+  ["npx -c 'git push origin main'", /direct push to main/],
+  ["npx --call 'cat .env'", /reading a secret file/],
+  ["npx --call='git push --force origin main'", /force push/],
+  ["npm exec -c 'git push origin main'", /direct push to main/],
+  ["npm exec --call 'cat .env'", /reading a secret file/],
+  ["timeout 5 xargs bash -c 'git push origin main'", /direct push to main/],
+  [`npx -c "echo 'oops"`, /^G17 unreadable: could not read the command: an unclosed quote$/],
   // An unclosed $( or backtick: the shell could not run the line, so the guard does not read it. v0.1 saw no closing ) or
   // second backtick, matched nothing, and let it through.
   [`echo ${DOLLAR_PAREN}`, /^G17 unreadable: could not read the command: an unclosed command substitution$/],
@@ -134,6 +150,13 @@ export const ALLOWED: string[] = [
   "git log --grep='find -delete'",
   "node scripts/report.js --exec-dir out",
   "ruby scripts/notes.rb -e",
+  // A shell string behind a runner that does nothing the rules name, and a runner that runs no shell string.
+  "xargs bash -c 'echo ok'",
+  "ls | xargs sh",
+  "echo x | xargs bash -c 'npm test'",
+  "npx -c 'npm run build'",
+  "npm exec -c 'ls -la'",
+  "npx --call 'echo hi'",
   // $( and backticks that the shell does not expand: in single quotes, escaped, in a comment, in a quoted heredoc.
   `echo '${DOLLAR_PAREN}'`,
   `echo '${BACKTICK}'`,

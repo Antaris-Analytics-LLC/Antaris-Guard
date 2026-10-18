@@ -269,5 +269,22 @@ describe("parse()", () => {
     assert.deepEqual(run("xargs"), { program: undefined, rest: [] });
     assert.deepEqual(run("npm install"), { program: "npm", rest: ["install"] });
     assert.deepEqual(run("ls -la"), { program: "ls", rest: ["-la"] });
+    // npx -c, npx --call and npm exec -c run their string with a shell, and come back as sh -c.
+    assert.deepEqual(run("npx -c 'git push origin main'"), { program: "sh", rest: ["-c", "git push origin main"] });
+    assert.deepEqual(run("npx -y --call 'cat .env'"), { program: "sh", rest: ["-c", "cat .env"] });
+    assert.deepEqual(run("npx --call='ls -la'"), { program: "sh", rest: ["-c", "ls -la"] });
+    assert.deepEqual(run("npm exec -c 'git push origin main'"), { program: "sh", rest: ["-c", "git push origin main"] });
+    assert.deepEqual(run("npm exec --call 'ls'"), { program: "sh", rest: ["-c", "ls"] });
+    assert.deepEqual(run("xargs -c ls"), { program: "ls", rest: [] }); // xargs has no -c; it is a flag like any other
+  });
+
+  it("reads the shell string behind a runner as commands", () => {
+    const commands = (line: string) => parse.parse(line).commands.map((c: string[] & { depth?: number }) => [c.depth, ...c]);
+    assert.deepEqual(commands("echo x | xargs bash -c 'cd a && git push origin main'"), [[0, "echo", "x"], [0, "xargs", "bash", "-c", "cd a && git push origin main"], [1, "cd", "a"], [1, "git", "push", "origin", "main"]]);
+    assert.deepEqual(commands("npx -c 'cat .env'"), [[0, "npx", "-c", "cat .env"], [1, "cat", ".env"]]);
+    assert.deepEqual(commands("npm exec -- bash -c 'ls'"), [[0, "npm", "exec", "--", "bash", "-c", "ls"], [1, "ls"]]);
+    assert.deepEqual(commands("ls | xargs sh"), [[0, "ls"], [0, "xargs", "sh"]]);
+    assert.throws(() => parse.parse(`npx -c "echo 'oops"`), /an unclosed quote/);
+    assert.throws(() => parse.parse(nest(3, "xargs bash -c 'ls'")), /shells nested more than three deep/);
   });
 });
