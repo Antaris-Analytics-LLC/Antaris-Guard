@@ -21,6 +21,17 @@ function javascriptFiles(dir: string): string[] {
   return out.sort();
 }
 
+/** Every test file under test/, wherever it sits. */
+function testFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...testFiles(full));
+    else if (entry.name.endsWith(".test.ts")) out.push(full);
+  }
+  return out.sort();
+}
+
 describe("node --check", () => {
   const files = javascriptFiles(ROOT);
 
@@ -29,6 +40,16 @@ describe("node --check", () => {
     for (const expected of ["guard.js", "subagent-guard.js", "lib/parse.js", "lib/judge.js", "lib/rules/index.js", "lib/rules/g18-browser-automation.js", "bench/versions/v0.1/guard.js", "bench/versions/v0.1/subagent-guard.js"]) {
       assert.ok(names.includes(expected), `${expected} not found`);
     }
+  });
+
+  it("every test file is in a folder npm test runs: test/, test/rules/ or test/timing/", () => {
+    // package.json names those three folders rather than a glob over everything, so test/timing/ can
+    // run on its own after the rest; a test file anywhere else would be left out in silence.
+    const folders = new Set(["test", path.join("test", "rules"), path.join("test", "timing")]);
+    for (const file of testFiles(path.join(ROOT, "test"))) {
+      assert.ok(folders.has(path.relative(ROOT, path.dirname(file))), `${path.relative(ROOT, file)} is in a folder npm test does not run`);
+    }
+    assert.ok(testFiles(path.join(ROOT, "test", "timing")).length >= 1, "test/timing/ has no test file");
   });
 
   for (const file of files) {

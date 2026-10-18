@@ -115,9 +115,13 @@ purpose: the session's shell cannot name it (G16) and the settings deny the edit
 config has the same standing as the hooks themselves. A config at the project root would be a
 file the session can edit, which is a guard the session can loosen; there is none. The project
 root is `CLAUDE_PROJECT_DIR` when Claude Code sets it, else the `cwd` field of the hook's stdin,
-else the process working directory. No config file means the built-in defaults, and the log
-says so on every line. Unknown keys fail validation, and a config that fails validation blocks
-every command with `G17` and the validation message.
+else the process working directory. No config file blocks every command with `G17`, naming the
+missing file and saying the operator writes it (`antaris-guard init` from R7, `configs/README.md`
+until then): absence is refusal, and a file git can remove without anyone naming it (checking out
+an older commit) must not quietly loosen the guard. The built-in defaults are what `init` writes
+for a new repository and what the defaults comparison in the tests runs on; they never stand in
+for a missing file. Unknown keys fail validation, and a config that fails validation blocks every
+command with `G17` and the validation message.
 
 ```json
 {
@@ -128,6 +132,7 @@ every command with `G17` and the validation message.
   "protectedPaths": [".claude/", "CLAUDE.md", ".mcp.json"],
   "secretPaths": [".env", ".env.*", "*.pem", "*.key", "*.p12"],
   "secretEnv": ["AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "DATABASE_URL", "GITHUB_TOKEN"],
+  "credentialPaths": ["~/.aws", "~/.ssh", "~/.config", "~/.netrc", "~/.npmrc"],
   "blockedPrograms": ["sudo", "su", "curl", "wget", "ssh", "scp", "nc", "ncat", "telnet", "dd", "mkfs", "crontab", "eval", "base64", "xxd", "python", "python3", "pip", "pip3"],
   "askPrograms": ["aws", "gcloud", "az", "kubectl", "terraform"],
   "packs": ["node", "aws-cdk", "docker"],
