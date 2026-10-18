@@ -258,6 +258,59 @@ describe("the hooks and the log", () => {
     assert.equal(log.verify(logOf(project)).ok, true);
   });
 
+  it("a stale lock is removed only while it is still the lock that was read", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "antaris-guard-lock-"));
+    const lock = path.join(dir, "log.jsonl.lock");
+    const gone = spawnSync(process.execPath, ["-e", "0"]).pid;
+    // Unchanged since it was read: removed.
+    fs.writeFileSync(lock, String(gone));
+    assert.equal(log.removeIfUnchanged(lock, log.readLock(lock)), true);
+    assert.ok(!fs.existsSync(lock));
+    // Read as a dead hook's lock, then cleared and taken by a fresh writer before this writer removes it:
+    // the second look sees another lock, and it stays. This is the race the follow-up narrows.
+    fs.writeFileSync(lock, String(gone));
+    const seen = log.readLock(lock);
+    fs.unlinkSync(lock);
+    fs.writeFileSync(lock, `${process.pid} fresh`);
+    assert.equal(log.removeIfUnchanged(lock, seen), false);
+    assert.equal(fs.readFileSync(lock, "utf8"), `${process.pid} fresh`);
+    // Nothing to remove, or nothing read: nothing removed.
+    assert.equal(log.removeIfUnchanged(path.join(dir, "none.lock"), seen), false);
+    assert.equal(log.removeIfUnchanged(lock, null), false);
+    assert.ok(fs.existsSync(lock));
+  });
+
+  it("a writer releases the lock only while it still holds the writer's own token", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "antaris-guard-lock-"));
+    const lock = path.join(dir, "log.jsonl.lock");
+    // The lock holds this process's pid first, then a token, and is gone after the write.
+    let held = "";
+    assert.equal(log.withLock(lock, () => { held = fs.readFileSync(lock, "utf8"); return 7; }), 7);
+    assert.match(held, new RegExp(`^${process.pid} [0-9a-f]{16}$`));
+    assert.ok(!fs.existsSync(lock));
+    // Cleared as stale while the writer ran, and taken by another writer: the first writer leaves it.
+    log.withLock(lock, () => { fs.unlinkSync(lock); fs.writeFileSync(lock, "999999 other"); });
+    assert.equal(fs.readFileSync(lock, "utf8"), "999999 other");
+    // A throw inside still releases the writer's own lock.
+    fs.unlinkSync(lock);
+    assert.throws(() => log.withLock(lock, () => { throw new Error("boom"); }), /boom/);
+    assert.ok(!fs.existsSync(lock));
+  });
+
+  it("64 hook processes at once, starting from a lock a dead hook left: every one exits 0 and the chain holds", async () => {
+    const project = freshProject();
+    const lock = `${logOf(project)}.lock`;
+    fs.mkdirSync(path.dirname(lock), { recursive: true });
+    fs.writeFileSync(lock, String(spawnSync(process.execPath, ["-e", "0"]).pid));
+    const runs = await runGuardParallel(CURRENT.guard, Array.from({ length: 64 }, () => STATUS), project);
+    assert.deepEqual(runs.map((r) => r.code), Array(64).fill(0), runs.filter((r) => r.code !== 0).map((r) => r.stderr).join("\n"));
+    const rows = linesOf(logOf(project));
+    assert.equal(rows.length, 64);
+    assert.equal(new Set(rows.map((r) => r.prev)).size, 64, "two lines share a prev");
+    assert.equal(log.verify(logOf(project)).ok, true);
+    assert.ok(!fs.existsSync(lock), "the lock was left behind");
+  });
+
   it(".gitignore keeps the log out of the repository", () => {
     const lines = fs.readFileSync(path.join(ROOT, ".gitignore"), "utf8").split("\n");
     assert.ok(lines.includes(`${DOT_CLAUDE}/guard/`), ".gitignore does not list the guard folder");

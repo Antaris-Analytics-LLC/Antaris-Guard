@@ -167,10 +167,16 @@ secret a command carried.
 
 Hook processes run at the same time when a session makes parallel tool calls, and two lines
 must never share a `prev`. The tail is read and the line appended under a lock file beside the
-log, created with the `wx` flag and holding the writer's pid; a writer waits on it for up to 15
-seconds, a lock whose holder is dead is cleared at once, and one older than 60 seconds is
-cleared as well. Ordinary contention never comes near the limit; a lock held that long means
-the log is stuck, and that is a `G17` block that says so.
+log, created with the `wx` flag and holding the writer's pid and a random token; a writer waits
+on it for up to 15 seconds, a lock whose holder is dead is cleared at once, and one older than 60
+seconds is cleared as well. Ordinary contention never comes near the limit; a lock held that long
+means the log is stuck, and that is a `G17` block that says so. A lock is removed only while it
+is still the one that was read: a writer clearing a stale lock reads it again just before
+removing it, and a writer releasing its lock checks that it still holds its own token. That
+narrows a race it cannot close: a dead holder's lock cleared by two writers at the same moment,
+or a holder that stalls past 60 seconds, can still let two hooks append at once, and the chain
+forks, two lines with one `prev`, which `verify-log` reports as a bad line. The README names
+the limit and how a fork reads next to tampering.
 
 `antaris-guard verify-log` walks the chain and reports the first break; with `--tip <hash>` it
 also requires the chain to end at that hash. `antaris-guard log` summarizes: decisions by rule,

@@ -76,6 +76,9 @@ export const LOOSENED: [command: string, was: RegExp, why: string][] = [
   [`cat ${HOME}/.claude/uploads/report.csv`, /session's own rules/, "home spelled out, which the hook knows from context.home"],
   ["cp ~/.claude/uploads/input.txt ./work/", /session's own rules/, "cp with the upload as a source and a destination outside the folder"],
   ["cp -t ./work ~/.claude/uploads/a ~/.claude/uploads/b", /session's own rules/, "cp -t names the destination first, so both uploads are sources"],
+  // R3 follow-up 3 keeps the wrappers: no assignment comes before the program, so the read stays a read. The merged round already allowed these.
+  ["timeout 5 cat ~/.claude/uploads/report.csv", /session's own rules/, "a wrapper that sets no variable keeps the exemption, as the follow-up decided"],
+  ["nice -n 10 head ~/.claude/uploads/report.csv", /session's own rules/, "the same with nice and its value"],
 ];
 
 export const REWORDED: [command: string, was: RegExp, now: RegExp, why: string][] = [
@@ -122,6 +125,43 @@ export const UNCHANGED: [command: string, reason: RegExp][] = [
   ["mv ~/.claude/uploads/x ./", /session's own rules/],
   ["node ~/.claude/uploads/script.js", /session's own rules/],
   ["tee ~/.claude/uploads/x", /session's own rules/],
+  // R3 follow-up 1. cp that makes links is not a read: the link it leaves in the project lets a later
+  // plain write change the upload. Blocked by v0.1 too, since they name the folder; against the merged
+  // R3, which let them through, these are new blocks.
+  ["cp -l ~/.claude/uploads/report.csv ./report.csv", /session's own rules/],
+  ["cp -s ~/.claude/uploads/report.csv ./report.csv", /session's own rules/],
+  ["cp -rs ~/.claude/uploads ./uploads", /session's own rules/],
+  ["cp -al ~/.claude/uploads/report.csv ./report.csv", /session's own rules/],
+  ["cp --link ~/.claude/uploads/report.csv ./report.csv", /session's own rules/],
+  ["cp --symbolic-link ~/.claude/uploads/report.csv ./report.csv", /session's own rules/],
+  ["cp --sym ~/.claude/uploads/report.csv ./report.csv", /session's own rules/],
+  ["cp --li ~/.claude/uploads/report.csv ./report.csv", /session's own rules/],
+  ["cp ~/.claude/uploads/report.csv ./report.csv -s", /session's own rules/],
+  ["cp -t ./work -l ~/.claude/uploads/report.csv", /session's own rules/],
+  // R3 follow-up 2. rg, less and more are not reading programs for the uploads read: rg runs a program
+  // on each file with --pre, --pre-glob and --hostname-bin, and the pagers write log files. Even a
+  // plain rg, less or more of an upload blocks now.
+  ["rg TODO ~/.claude/uploads/log.txt", /session's own rules/],
+  ["rg --pre ./decode.sh TODO ~/.claude/uploads/log.txt", /session's own rules/],
+  ["rg --pre=./decode.sh --pre-glob '*.gz' TODO ~/.claude/uploads/log.gz", /session's own rules/],
+  ["rg --hostname-bin ./name TODO ~/.claude/uploads/log.txt", /session's own rules/],
+  ["less ~/.claude/uploads/report.csv", /session's own rules/],
+  ["less -o ./copy.csv ~/.claude/uploads/report.csv", /session's own rules/],
+  ["less -O ./copy.csv ~/.claude/uploads/report.csv", /session's own rules/],
+  ["less --LOG-FILE=./copy.csv ~/.claude/uploads/report.csv", /session's own rules/],
+  ["more ~/.claude/uploads/report.csv", /session's own rules/],
+  // R3 follow-up 3. An assignment before the program changes what it runs, so the command is not a plain
+  // read: directly, through env, behind a wrapper, and even a harmless one. env with no assignment counts
+  // too, since -S can carry one inside a word.
+  ["LD_PRELOAD=./hook.so cat ~/.claude/uploads/report.csv", /session's own rules/],
+  ["env LD_PRELOAD=./hook.so cat ~/.claude/uploads/report.csv", /session's own rules/],
+  ["RIPGREP_CONFIG_PATH=./rg.conf grep TODO ~/.claude/uploads/log.txt", /session's own rules/],
+  ["LESSOPEN='|./show %s' head ~/.claude/uploads/report.csv", /session's own rules/],
+  ["timeout 5 env LD_PRELOAD=./hook.so cat ~/.claude/uploads/report.csv", /session's own rules/],
+  ["nice -n 10 LD_PRELOAD=./hook.so cat ~/.claude/uploads/report.csv", /session's own rules/],
+  ["LC_ALL=C grep TODO ~/.claude/uploads/log.txt", /session's own rules/],
+  ["env cat ~/.claude/uploads/report.csv", /session's own rules/],
+  ["env -S'LD_PRELOAD=./hook.so' cat ~/.claude/uploads/report.csv", /session's own rules/],
 ];
 
 export const ALLOWED: string[] = [
