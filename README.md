@@ -121,9 +121,9 @@ Be clear about this with whoever reads the guard's log.
 - **A string run by a program the guard does not read yet.** `sh -c`, `bash -c`, `npx -c`, `npm exec -c` and `flock -c` are read as commands; `find -exec sh -c`, `script -c`, `watch`, `env -S`, `parallel` and `tmux new-session` run strings too and are not read yet. Nor is `$'...'` quoting, which the parser reads as a word beginning with `$`, so `bash -c $'git push origin main'` is not seen as the push it is; nor `git push --mirror`, which pushes every branch without naming one and so passes G07. Round 5 reads them, each with its cases.
 - **Anything outside Bash and Agent calls.** Edits go through the permission lists in settings, which is where `.claude/`, `CLAUDE.md`, `.mcp.json` and `/opt/pw-browsers/` are denied to the Read and Edit tools.
 
-The line to add to your CLAUDE.md, in whatever words fit your repository:
+The rule to add to your CLAUDE.md, as this repository's own session rule reads:
 
-> If the guard blocks a command, say what was blocked and stop. Doing the same thing by another route (a script, another language, another tool) is the same as doing it directly, and is not allowed.
+> If the guard blocks a command, say what was blocked and stop. Doing the same thing by another route (a script, another language, another tool) is the same as doing it directly, and is not allowed. This includes reads. There are two exceptions. If the guard blocked a command substitution or a line it couldn't read, you may redo the work as plain, separate commands, which the guard then judges one by one. If the guard's message names another way, such as opening the file with the Read tool, use that.
 
 ## Install
 
