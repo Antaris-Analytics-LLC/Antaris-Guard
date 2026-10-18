@@ -13,7 +13,8 @@
  * error. A config the guard cannot read is a deny with G17's reason, as the hook does it.
  * explain judges and prints; it never writes the log.
  *
- * verify-log walks the decision log's chain and names the first line that does not hold; with
+ * verify-log walks the decision log's chain and names every line that does not hold, saying when a
+ * break looks like a fork (two lines sharing one prev); with
  * --tip it also requires the chain to end at that hash, which is how a rewrite of the whole file
  * is seen when the operator kept the tip somewhere no session can write. log prints the tip and
  * the counts by decision, rule, day, session and tool, with the file's size. Both exit 0 when
@@ -105,10 +106,14 @@ function verifyLog(tip) {
   if (!file) { out("log: off (the config turns the log off)"); return 1; }
   out(`log: ${file}`);
   const r = log.verify(file, { tip });
-  if (r.ok) { out(`ok: ${r.lines} lines, tip ${r.tip}${tip !== undefined ? " (matches the tip given)" : ""}`); return 0; }
-  out(`broken at line ${r.line}: ${r.reason}`);
-  return 1;
+  for (const b of r.breaks) out(brokenLine(b));
+  if (r.tipReason) out(`broken at line ${r.lines}: ${r.tipReason}`);
+  if (r.ok) out(`ok: ${r.lines} lines, tip ${r.tip}${tip !== undefined ? " (matches the tip given)" : ""}`);
+  return r.ok ? 0 : 1;
 }
+
+/** One break as a line of output, saying when it looks like a fork. */
+const brokenLine = (b) => `broken at line ${b.line}: ${b.reason}${b.fork ? `; lines ${b.fork} and ${b.line} share one prev, which looks like a fork: two hooks appending at once` : ""}`;
 
 function showLog() {
   const found = settingsOrNull();
@@ -124,7 +129,11 @@ function showLog() {
     return 1;
   }
   out(`lines: ${s.lines}, size: ${s.size} bytes`);
-  out(s.chain.ok ? `chain: holds, tip ${s.chain.tip}` : `chain: broken at line ${s.chain.line}: ${s.chain.reason}`);
+  if (s.chain.ok) out(`chain: holds, tip ${s.chain.tip}`);
+  else {
+    const more = s.chain.breaks.length - 1;
+    out(`chain: ${brokenLine(s.chain.breaks[0])}${more ? `; ${more} more ${more === 1 ? "break" : "breaks"} after it, which verify-log lists` : ""}`);
+  }
   const show = (name, counts) => { const keys = Object.keys(counts).sort(); out(`${name}: ${keys.length ? keys.map((k) => `${k} ${counts[k]}`).join(", ") : "none"}`); };
   show("by decision", s.byDecision);
   show("by rule", s.byRule);

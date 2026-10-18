@@ -175,10 +175,12 @@ is still the one that was read: a writer clearing a stale lock reads it again ju
 removing it, and a writer releasing its lock checks that it still holds its own token. That
 narrows a race it cannot close: a dead holder's lock cleared by two writers at the same moment,
 or a holder that stalls past 60 seconds, can still let two hooks append at once, and the chain
-forks, two lines with one `prev`, which `verify-log` reports as a bad line. The README names
-the limit and how a fork reads next to tampering.
+forks, two lines with one `prev`, which `verify-log` reports as a bad line that looks like a
+fork. The README names the limit and how a fork reads next to tampering.
 
-`antaris-guard verify-log` walks the chain and reports the first break; with `--tip <hash>` it
+`antaris-guard verify-log` walks the whole chain and reports every break, going on after each from
+the hash the broken line carries, and says when a break looks like a fork, two lines sharing one
+`prev`; with `--tip <hash>` it
 also requires the chain to end at that hash. `antaris-guard log` summarizes: decisions by rule,
 by day, by session, by tool, and prints the tip. What the chain proves: that no line was
 changed, added or removed by anyone who did not also recompute every line after it. What it

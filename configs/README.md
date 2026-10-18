@@ -51,7 +51,7 @@ is allow, exit 2 is deny, the same as the hook. `verify-log` and `log` read the 
 the log:
 
 ```
-node bin/antaris-guard.js verify-log              # walks the chain, names the first bad line
+node bin/antaris-guard.js verify-log              # walks the chain, names every bad line and says when one looks like a fork
 node bin/antaris-guard.js verify-log --tip <hash> # and requires the chain to end at that hash
 node bin/antaris-guard.js log                     # the tip, the size, and counts by decision, rule, day, session and tool
 ```
