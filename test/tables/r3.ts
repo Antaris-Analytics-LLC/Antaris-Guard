@@ -79,6 +79,11 @@ export const LOOSENED: [command: string, was: RegExp, why: string][] = [
   // R3 follow-up 3 keeps the wrappers: no assignment comes before the program, so the read stays a read. The merged round already allowed these.
   ["timeout 5 cat ~/.claude/uploads/report.csv", /session's own rules/, "a wrapper that sets no variable keeps the exemption, as the follow-up decided"],
   ["nice -n 10 head ~/.claude/uploads/report.csv", /session's own rules/, "the same with nice and its value"],
+  // Second pass, answer 3: file without -C is still a read. The merged round already allowed it.
+  ["file -b --mime-type ~/.claude/uploads/report.csv", /session's own rules/, "file without -C or --compile only reads, so its options keep the exemption"],
+  // Second pass, answer 4: a line of plain reads keeps the exemption. The merged round already allowed these.
+  ["cat ~/.claude/uploads/report.csv | head -n 5", /session's own rules/, "every command on the line is a reading program, a pipe between two of them included"],
+  ["cp ~/.claude/uploads/report.csv ./work/report.csv && wc -l ./work/report.csv", /session's own rules/, "cp of an upload and a read of the copy are both plain reads"],
 ];
 
 export const REWORDED: [command: string, was: RegExp, now: RegExp, why: string][] = [
@@ -162,6 +167,27 @@ export const UNCHANGED: [command: string, reason: RegExp][] = [
   ["LC_ALL=C grep TODO ~/.claude/uploads/log.txt", /session's own rules/],
   ["env cat ~/.claude/uploads/report.csv", /session's own rules/],
   ["env -S'LD_PRELOAD=./hook.so' cat ~/.claude/uploads/report.csv", /session's own rules/],
+  // R3 follow-up, second pass, answer 3. file -C or --compile writes a compiled magic file, so it is not a read.
+  ["file -C -m ~/.claude/uploads/magic", /session's own rules/],
+  ["file --compile -m ~/.claude/uploads/magic", /session's own rules/],
+  ["file -bC -m ~/.claude/uploads/magic", /session's own rules/],
+  ["file --comp -m ~/.claude/uploads/magic", /session's own rules/],
+  ["file -m ~/.claude/uploads/magic -C", /session's own rules/],
+  // Second pass, answer 4. The read is let through only when every command on the line is a reading program
+  // or cp with no assignment: an export, declare, set or source anywhere on the line, a command that is only
+  // an assignment, and any other command beside the read turn it off for the whole line.
+  ["export LD_PRELOAD=./hook.so; cat ~/.claude/uploads/report.csv", /session's own rules/],
+  ["declare -x LD_PRELOAD=./hook.so; cat ~/.claude/uploads/report.csv", /session's own rules/],
+  ["typeset -x LD_PRELOAD=./hook.so; cat ~/.claude/uploads/report.csv", /session's own rules/],
+  ["set -a; cat ~/.claude/uploads/report.csv", /session's own rules/],
+  ["source ./env.sh && cat ~/.claude/uploads/report.csv", /session's own rules/],
+  [". ./env.sh; head ~/.claude/uploads/report.csv", /session's own rules/],
+  ["X=1; cat ~/.claude/uploads/report.csv", /session's own rules/],
+  ["cat ~/.claude/uploads/report.csv; LC_ALL=C grep TODO ./notes.txt", /session's own rules/],
+  ["cd docs && cat ~/.claude/uploads/report.csv", /session's own rules/],
+  ["cat ~/.claude/uploads/report.csv && echo done", /session's own rules/],
+  ["cat ~/.claude/uploads/report.csv | sort", /session's own rules/],
+  ["bash -c 'cat ~/.claude/uploads/report.csv'", /session's own rules/],
 ];
 
 export const ALLOWED: string[] = [

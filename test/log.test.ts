@@ -50,37 +50,107 @@ describe("lib/log.js", () => {
     assert.deepEqual(Object.keys(b), ["v", "t", "session", "tool", "model", "decision", "rule", "reason", "cmd_sha256", "prev", "hash"]);
     const { hash, ...rest } = a;
     assert.equal(hash, log.sha256(JSON.stringify(rest)));
-    assert.deepEqual(log.verify(file), { ok: true, lines: 2, tip: b.hash });
+    assert.deepEqual(log.verify(file), { ok: true, lines: 2, tip: b.hash, breaks: [] });
     assert.equal(log.verify(file, { tip: b.hash }).ok, true);
-    assert.match(log.verify(file, { tip: "abc" }).reason, /^the chain ends at [0-9a-f]{64}, not at the tip abc$/);
+    assert.equal(log.verify(file, { tip: b.hash }).tipLine, 2);
+    assert.match(log.verify(file, { tip: "abc" }).reason, /^the tip given is not the hash of any line: /);
     assert.deepEqual(linesOf(file), [a, b]);
   });
 
-  it("verify() names the first line that does not hold: changed, deleted, inserted, truncated, the wrong version, not genesis", () => {
+  it("verify() names every line that does not hold: changed, deleted, inserted, truncated, the wrong version, not genesis", () => {
     const file = fiveLines();
     const good = fs.readFileSync(file, "utf8");
     const rows = good.trim().split("\n");
-    const written = (text: string) => { fs.writeFileSync(file, text); return log.verify(file); };
+    // The breaks a text gives, each as [line, reason, fork]; the first one is also the result's line and reason.
+    const breaks = (text: string) => {
+      fs.writeFileSync(file, text);
+      const r = log.verify(file);
+      assert.equal(r.ok, false);
+      assert.deepEqual([r.line, r.reason], [r.breaks[0].line, r.breaks[0].reason]);
+      return r.breaks.map((b: { line: number; reason: string; fork: number }) => [b.line, b.reason, b.fork]);
+    };
     assert.deepEqual(log.verify(file).ok, true);
-    // A field changed on line 3: its hash no longer matches.
-    assert.deepEqual(written([...rows.slice(0, 2), rows[2].replace('"decision":"allow"', '"decision":"deny"'), ...rows.slice(3)].join("\n") + "\n"), { ok: false, line: 3, reason: "hash does not match the line" });
-    // Line 3 deleted: line 4 (now the third) points at a hash that is not before it.
-    assert.deepEqual(written([...rows.slice(0, 2), ...rows.slice(3)].join("\n") + "\n"), { ok: false, line: 3, reason: "prev is not the hash of line 2" });
-    // A line inserted after line 2, with a good hash of its own but the wrong prev.
+    // A field changed on line 3: its hash no longer matches, and line 4 still follows from the hash line 3 carries.
+    assert.deepEqual(breaks([...rows.slice(0, 2), rows[2].replace('"decision":"allow"', '"decision":"deny"'), ...rows.slice(3)].join("\n") + "\n"), [[3, "hash does not match the line", 0]]);
+    // Line 3 deleted: line 4 (now the third) points at a hash that no line carries. Not a fork.
+    assert.deepEqual(breaks([...rows.slice(0, 2), ...rows.slice(3)].join("\n") + "\n"), [[3, "prev is not the hash of line 2", 0]]);
+    // A line inserted after line 2, with a good hash of its own but the wrong prev: it breaks, and so does the line after it.
     const forged = log.line(entry({ cmd_sha256: log.sha256("forged") }), "0".repeat(64));
-    assert.deepEqual(written([...rows.slice(0, 2), JSON.stringify(forged), ...rows.slice(2)].join("\n") + "\n"), { ok: false, line: 3, reason: "prev is not the hash of line 2" });
+    assert.deepEqual(breaks([...rows.slice(0, 2), JSON.stringify(forged), ...rows.slice(2)].join("\n") + "\n"), [[3, "prev is not the hash of line 2", 0], [4, "prev is not the hash of line 3", 0]]);
     // The last line cut short, as a crash mid-write would leave it.
-    assert.deepEqual(written(good.slice(0, -20)), { ok: false, line: 5, reason: "not JSON" });
+    assert.deepEqual(breaks(good.slice(0, -20)), [[5, "not JSON", 0]]);
     // The wrong shape version, a first line that is not genesis, and a field the shape does not have.
-    assert.deepEqual(written(rows[0].replace('"v":1', '"v":2') + "\n"), { ok: false, line: 1, reason: "v is 2, not 1" });
-    assert.deepEqual(written(rows[1] + "\n"), { ok: false, line: 1, reason: "prev is not genesis" });
+    assert.deepEqual(breaks(rows[0].replace('"v":1', '"v":2') + "\n"), [[1, "v is 2, not 1", 0]]);
+    assert.deepEqual(breaks(rows[1] + "\n"), [[1, "prev is not genesis", 0]]);
     const extra = JSON.parse(rows[0]); extra.note = "x";
-    assert.deepEqual(written(JSON.stringify(extra) + "\n"), { ok: false, line: 1, reason: "unknown field note" });
+    assert.deepEqual(breaks(JSON.stringify(extra) + "\n"), [[1, "unknown field note", 0]]);
     // Not JSON at all, and no file.
-    assert.deepEqual(written("{\n"), { ok: false, line: 1, reason: "not JSON" });
+    assert.deepEqual(breaks("{\n"), [[1, "not JSON", 0]]);
     fs.rmSync(file);
     assert.match(log.verify(file).reason, /^could not read .*ENOENT/);
     assert.equal(log.verify(file).line, 0);
+    assert.equal(log.verify(file).breaks.length, 1);
+  });
+
+  it("verify() with a tip: found on any line it holds, with every line up to it proven; missing, or broken up to it, it fails", () => {
+    const file = fiveLines();
+    const text = fs.readFileSync(file, "utf8");
+    const rows = text.trim().split("\n").map((t) => JSON.parse(t));
+    // The log has grown since the tip was noted at line 2: the tip holds, and so does the chain.
+    let r = log.verify(file, { tip: rows[1].hash });
+    assert.deepEqual([r.ok, r.tipLine, r.tipReason, r.lines], [true, 2, null, 5]);
+    // The tip on the last line, and on the first.
+    assert.equal(log.verify(file, { tip: rows[4].hash }).tipLine, 5);
+    assert.equal(log.verify(file, { tip: rows[0].hash }).tipLine, 1);
+    // No line carries it: the tip fails, with no break in the chain itself.
+    r = log.verify(file, { tip: "0".repeat(64) });
+    assert.deepEqual([r.ok, r.tipLine, r.breaks.length], [false, 0, 0]);
+    assert.match(r.tipReason, /^the tip given is not the hash of any line: the chain up to it was rewritten or cut, or the tip is from another log$/);
+    assert.equal(r.reason, r.tipReason);
+    // Lines cut from the end, through the line the tip names: no break is left, and only the tip finds the cut.
+    fs.writeFileSync(file, text.trim().split("\n").slice(0, 3).join("\n") + "\n");
+    assert.equal(log.verify(file).ok, true);
+    assert.equal(log.verify(file, { tip: rows[4].hash }).ok, false);
+    assert.equal(log.verify(file, { tip: rows[4].hash }).tipLine, 0);
+    // A break before the tip line, and on it: the lines up to the tip are not proven.
+    const lines = text.trim().split("\n");
+    fs.writeFileSync(file, [lines[0].replace('"session":"s"', '"session":"x"'), ...lines.slice(1)].join("\n") + "\n");
+    r = log.verify(file, { tip: rows[3].hash });
+    assert.equal(r.ok, false);
+    assert.equal(r.tipLine, 4);
+    assert.equal(r.tipReason, "the tip given is line 4, but the chain breaks at line 1, before it, so the lines up to the tip are not proven");
+    r = log.verify(file, { tip: rows[0].hash });
+    assert.equal(r.tipReason, "the tip given is line 1, but that line does not hold, so the lines up to it are not proven");
+    // A break after the tip line: the tip holds, the chain does not.
+    fs.writeFileSync(file, [...lines.slice(0, 3), lines[3].replace('"session":"s"', '"session":"x"'), lines[4]].join("\n") + "\n");
+    r = log.verify(file, { tip: rows[1].hash });
+    assert.deepEqual([r.ok, r.tipLine, r.tipReason], [false, 2, null]);
+    assert.deepEqual(r.breaks, [{ line: 4, reason: "hash does not match the line", fork: 0 }]);
+  });
+
+  it("verify() keeps walking after a break and lists every one, and marks a fork: two lines sharing one prev", () => {
+    const file = fiveLines();
+    const rows = fs.readFileSync(file, "utf8").trim().split("\n");
+    // Two edits far apart: line 2 changed and line 4 removed. Both are listed, and the lines between are still checked.
+    fs.writeFileSync(file, [rows[0], rows[1].replace('"session":"s"', '"session":"x"'), rows[2], rows[4]].join("\n") + "\n");
+    let r = log.verify(file);
+    assert.equal(r.ok, false);
+    assert.deepEqual(r.breaks, [{ line: 2, reason: "hash does not match the line", fork: 0 }, { line: 4, reason: "prev is not the hash of line 3", fork: 0 }]);
+    // A fork, as two hooks appending at once leave it: lines 4 and 5 both follow line 3, and line 6 follows line 5.
+    const three = rows.slice(0, 3).map((t) => JSON.parse(t));
+    const a = log.line(entry({ cmd_sha256: log.sha256("a") }), three[2].hash);
+    const b = log.line(entry({ cmd_sha256: log.sha256("b") }), three[2].hash);
+    const c = log.line(entry({ cmd_sha256: log.sha256("c") }), b.hash);
+    fs.writeFileSync(file, [...rows.slice(0, 3), JSON.stringify(a), JSON.stringify(b), JSON.stringify(c)].join("\n") + "\n");
+    r = log.verify(file);
+    assert.equal(r.ok, false);
+    assert.equal(r.lines, 6);
+    assert.equal(r.tip, c.hash);
+    assert.deepEqual(r.breaks, [{ line: 5, reason: "prev is not the hash of line 4", fork: 4 }]);
+    // Three hooks at once: the third line shares the same prev too, and is named against the first that carried it.
+    const d = log.line(entry({ cmd_sha256: log.sha256("d") }), three[2].hash);
+    fs.writeFileSync(file, [...rows.slice(0, 3), JSON.stringify(a), JSON.stringify(b), JSON.stringify(d)].join("\n") + "\n");
+    assert.deepEqual(log.verify(file).breaks, [{ line: 5, reason: "prev is not the hash of line 4", fork: 4 }, { line: 6, reason: "prev is not the hash of line 5", fork: 4 }]);
   });
 
   it("summary() counts by decision, rule, day, session and tool", () => {
@@ -140,7 +210,7 @@ describe("the hooks and the log", () => {
     assert.equal(rows[2].rule, "G17");
     assert.equal(rows[2].reason, "could not read the tool call");
     assert.equal(rows[2].cmd_sha256, log.sha256("not json"));
-    assert.deepEqual(log.verify(logOf(project)), { ok: true, lines: 3, tip: rows[2].hash });
+    assert.deepEqual(log.verify(logOf(project)), { ok: true, lines: 3, tip: rows[2].hash, breaks: [] });
     assert.ok(!fs.existsSync(`${logOf(project)}.lock`), "the lock was left behind");
     assert.match(new Date(rows[0].t as string).toISOString(), /^\d{4}-\d{2}-\d{2}T/);
   });
@@ -226,7 +296,7 @@ describe("the hooks and the log", () => {
     assert.equal(rows.length, 64);
     assert.equal(new Set(rows.map((r) => r.prev)).size, 64, "two lines share a prev");
     assert.equal(new Set(rows.map((r) => r.hash)).size, 64);
-    assert.deepEqual(log.verify(logOf(project)), { ok: true, lines: 64, tip: rows[63].hash });
+    assert.deepEqual(log.verify(logOf(project)), { ok: true, lines: 64, tip: rows[63].hash, breaks: [] });
     assert.ok(!fs.existsSync(`${logOf(project)}.lock`), "the lock was left behind");
   });
 
@@ -328,15 +398,30 @@ describe("verify-log and log", () => {
     assert.match(r.stdout, new RegExp(`^config: .*\\nlog: .*log\\.jsonl\\nok: 2 lines, tip ${rows[1].hash}\\n$`));
     r = cli(["verify-log", "--tip", rows[1].hash], project);
     assert.equal(r.code, 0);
-    assert.match(r.stdout, /\(matches the tip given\)\n$/);
+    assert.match(r.stdout, new RegExp(`\\nthe tip given is line 2: every line up to it is as it was when the tip was noted\\nok: 2 lines, tip ${rows[1].hash}\\n$`));
+    // A tip noted earlier, with the log grown since: it names its line and passes.
     r = cli(["verify-log", `--tip=${rows[0].hash}`], project);
+    assert.equal(r.code, 0);
+    assert.match(r.stdout, /\nthe tip given is line 1: every line up to it is as it was when the tip was noted\nok: 2 lines, /);
+    // A tip no line carries fails, and says so.
+    r = cli(["verify-log", `--tip=${"0".repeat(64)}`], project);
     assert.equal(r.code, 1);
-    assert.match(r.stdout, /broken at line 2: the chain ends at [0-9a-f]{64}, not at the tip [0-9a-f]{64}\n$/);
+    assert.match(r.stdout, /\nthe tip given is not the hash of any line: the chain up to it was rewritten or cut, or the tip is from another log\n$/);
     const text = fs.readFileSync(logOf(project), "utf8").replace('"rule":"G07"', '"rule":"G06"');
     fs.writeFileSync(logOf(project), text);
     r = cli(["verify-log"], project);
     assert.equal(r.code, 1);
     assert.match(r.stdout, /broken at line 2: hash does not match the line\n$/);
+    // Every break is listed, and a fork is named as one: a third line that follows line 1, as line 2 does.
+    const first = JSON.parse(text.split("\n")[0]);
+    const forked = log.line({ t: first.t, session: "test-session", tool: "Bash", decision: "allow", rule: null, reason: "", cmd_sha256: log.sha256("ls") }, first.hash);
+    fs.appendFileSync(logOf(project), JSON.stringify(forked) + "\n");
+    r = cli(["verify-log"], project);
+    assert.equal(r.code, 1);
+    assert.match(r.stdout, /\nbroken at line 2: hash does not match the line\nbroken at line 3: prev is not the hash of line 2; lines 2 and 3 share one prev, which looks like a fork: two hooks appending at once\n$/);
+    const shown = cli(["log"], project);
+    assert.equal(shown.code, 1);
+    assert.match(shown.stdout, /\nchain: broken at line 2: hash does not match the line; 1 more break after it, which verify-log lists\n/);
     fs.rmSync(logOf(project));
     r = cli(["verify-log"], project);
     assert.equal(r.code, 1);
