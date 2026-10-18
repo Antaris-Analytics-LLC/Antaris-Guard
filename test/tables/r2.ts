@@ -21,6 +21,10 @@ const { MAX_COMMAND_LENGTH } = require(path.join(ROOT, "lib", "judge.js"));
 /** A command of exactly `length` characters: echo and a run of a's. */
 export const ofLength = (length: number): string => `echo ${"a".repeat(length - 5)}`;
 
+// Spelled in parts so this file never carries them as text the shell hook would read.
+const DOLLAR_PAREN = "$" + "(";
+const BACKTICK = String.fromCharCode(96);
+
 export const BLOCKED: [command: string, reason: RegExp][] = [
   // The length cap: a command one character past it is G17 before the parser sees it.
   [ofLength(MAX_COMMAND_LENGTH + 1), /^G17 unreadable: the command is too long to judge: 262145 characters; the guard reads at most 262144\. Put long content in a file with the Write tool$/],
@@ -57,6 +61,18 @@ export const BLOCKED: [command: string, reason: RegExp][] = [
   ["setsid bash -c 'git push origin main'", /^G07 push-to-protected: direct push to main; open a PR instead$/],
   ["cat scripts/setup.txt | busybox sh", /^G11 pipe-into-interpreter: piping into an interpreter$/],
   ["cat scripts/setup.txt | doas bash", /piping into an interpreter/],
+  // An unclosed $( or backtick: the shell could not run the line, so the guard does not read it. v0.1 saw no closing ) or
+  // second backtick, matched nothing, and let it through.
+  [`echo ${DOLLAR_PAREN}`, /^G17 unreadable: could not read the command: an unclosed command substitution$/],
+  [`echo ${DOLLAR_PAREN}date`, /an unclosed command substitution/],
+  [`echo "${DOLLAR_PAREN}ls"`, /an unclosed command substitution/],
+  [`echo ${DOLLAR_PAREN} ; echo ok`, /an unclosed command substitution/],
+  [`bash -c 'echo ${DOLLAR_PAREN}'`, /an unclosed command substitution/],
+  [`cat <<EOF\n${DOLLAR_PAREN}\nEOF`, /an unclosed command substitution/],
+  [`echo ${BACKTICK}ls`, /^G17 unreadable: could not read the command: an unclosed backtick$/],
+  [BACKTICK, /an unclosed backtick/],
+  [`echo "${BACKTICK}"`, /an unclosed backtick/],
+  [`cat <<EOF\n${BACKTICK}\nEOF`, /an unclosed backtick/],
 ];
 
 export const LOOSENED: [command: string, was: RegExp, why: string][] = [
@@ -67,6 +83,11 @@ export const LOOSENED: [command: string, was: RegExp, why: string][] = [
 
 export const REWORDED: [command: string, was: RegExp, now: RegExp, why: string][] = [
   ["ls | xargs -I{} find {} -exec rm {} \\;", /xargs rm is a delete/, /find -exec rm is a delete/, "find is now seen through xargs, and the find checks run before the xargs one, as v0.1 ordered them"],
+  // Still blocked, now for the real reason: the substitution is open, whatever a ) elsewhere on the line looked like to v0.1.
+  [`echo ${DOLLAR_PAREN}')'`, /command substitution/, /an unclosed command substitution/, "the ) is inside quotes, so the substitution is still open; v0.1 saw a ) somewhere on the line"],
+  [`echo ${DOLLAR_PAREN}ls # )`, /command substitution/, /an unclosed command substitution/, "the ) is in a comment, so the substitution is still open"],
+  [`echo ${DOLLAR_PAREN}(1+2)`, /command substitution/, /an unclosed command substitution/, "arithmetic one ) short is still open; v0.1 saw a ) on the line"],
+  [`echo ${BACKTICK}ls${BACKTICK} ${BACKTICK}date`, /command substitution/, /an unclosed backtick/, "three backticks leave one open; v0.1 saw a pair"],
 ];
 
 export const UNCHANGED: [command: string, reason: RegExp][] = [
@@ -84,6 +105,14 @@ export const UNCHANGED: [command: string, reason: RegExp][] = [
   ["ls | xargs -I{} find {} -name rm", /xargs rm is a delete/],
   ["node -e 'x' ; echo rmSync", /a delete inside inline code/],
   ["npx tsx -e 'x' && echo unlinkSync", /a delete inside inline code/],
+  // A closed substitution is what it always was, G10: arithmetic, a case statement's ) inside one, a body the shell expands.
+  [`echo ${DOLLAR_PAREN}(1+2))`, /command substitution/],
+  [`echo ${DOLLAR_PAREN}case x in a) echo a;; esac)`, /command substitution/],
+  [`echo "${DOLLAR_PAREN}ls)"`, /command substitution/],
+  [`echo '${DOLLAR_PAREN}ls)'`, /command substitution/],
+  [`cat <<EOF\n${DOLLAR_PAREN}ls)\nEOF`, /command substitution/],
+  [`echo ${BACKTICK}ls${BACKTICK}`, /command substitution/],
+  [`echo ${DOLLAR_PAREN}echo ${BACKTICK}ls${BACKTICK})`, /command substitution/],
 ];
 
 export const ALLOWED: string[] = [
@@ -105,4 +134,20 @@ export const ALLOWED: string[] = [
   "git log --grep='find -delete'",
   "node scripts/report.js --exec-dir out",
   "ruby scripts/notes.rb -e",
+  // $( and backticks that the shell does not expand: in single quotes, escaped, in a comment, in a quoted heredoc.
+  `echo '${DOLLAR_PAREN}'`,
+  `echo '${BACKTICK}'`,
+  `echo \\$\\(`,
+  `echo \\${BACKTICK}`,
+  `echo "\\$("`,
+  `echo "\\${BACKTICK}"`,
+  `grep -n '\\$(' lib/parse.js`,
+  `ls # ${DOLLAR_PAREN}`,
+  `ls # ${BACKTICK}`,
+  `cat <<'EOF'\n${DOLLAR_PAREN}\nEOF`,
+  `cat <<"EOF"\n${BACKTICK}\nEOF`,
+  `cat <<\\EOF\n${DOLLAR_PAREN}\nEOF`,
+  `git commit -q -F - <<'EOF'\nThe guard now refuses an unclosed ${DOLLAR_PAREN} or backtick\nEOF`,
+  "echo $ (ls)",
+  "echo ')'",
 ];

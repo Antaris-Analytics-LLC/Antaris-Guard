@@ -208,6 +208,34 @@ describe("parse()", () => {
     assert.doesNotThrow(() => parse.parse(nest(3, "ls")));
   });
 
+  it("counts $( and backticks as the shell does, and throws on one left open", () => {
+    const D = "$" + "(", T = String.fromCharCode(96);
+    const open = /an unclosed command substitution/, tick = /an unclosed backtick/;
+    assert.throws(() => parse.parse(`echo ${D}`), open);
+    assert.throws(() => parse.parse(`echo ${D}(1+2)`), open);
+    assert.throws(() => parse.parse(`echo "${D}ls"`), open);
+    assert.throws(() => parse.parse(`echo ${D}')'`), open);
+    assert.throws(() => parse.parse(`echo ${D}ls # )`), open);
+    assert.throws(() => parse.parse(`echo ${T}ls`), tick);
+    assert.throws(() => parse.parse(`echo "${T}"`), tick);
+    assert.throws(() => parse.parse(`echo ${T}a${T} ${T}`), tick);
+    // Closed ones parse; what they run is G10's business, and the words come out as they did in v0.1.
+    assert.deepEqual(parse.parse(`echo ${D}(1+2))`).commands.map((c: string[]) => [...c]), [["echo", "$"], ["1+2"]]);
+    assert.deepEqual(parse.parse(`echo ${D}case x in a) echo a;; esac)`).commands.map((c: string[]) => [...c]), [["echo", "$"], ["case", "x", "in", "a"], ["echo", "a"], ["esac"]]);
+    assert.doesNotThrow(() => parse.parse(`echo ${D}echo ${T}ls${T})`));
+    // Not expanded by the shell, not counted: single quotes, escapes, comments, quoted heredocs.
+    for (const line of [`echo '${D}'`, `echo '${T}'`, "echo \\$\\(", `echo \\${T}`, `echo "\\$("`, `echo "\\${T}"`, `ls # ${D}`, `ls # ${T}`, `cat <<'EOF'\n${D}\nEOF`, `cat <<"EOF"\n${T}\nEOF`, `cat <<\\EOF\n${D}\nEOF`, "echo $ (ls)"]) {
+      assert.doesNotThrow(() => parse.parse(line), line);
+    }
+    // Expanded by the shell, counted: an unquoted heredoc body, and the string a shell runs.
+    assert.throws(() => parse.parse(`cat <<EOF\n${D}\nEOF`), open);
+    assert.throws(() => parse.parse(`cat <<EOF\n${T}\nEOF`), tick);
+    assert.throws(() => parse.parse(`cat <<EOF\n\\${D}\n${D}\nEOF`), open);
+    assert.doesNotThrow(() => parse.parse(`cat <<EOF\n\\${D}\nEOF`));
+    assert.doesNotThrow(() => parse.parse(`cat <<EOF\n${D}ls)\nEOF`));
+    assert.throws(() => parse.parse(`bash -c 'echo ${D}'`), open);
+  });
+
   it("finds the program past the wrappers, their options and their own positional words", () => {
     const program = (line: string) => parse.programOf(parse.commandsOf(line)[0]).program;
     assert.equal(program("timeout -s KILL 60 git push"), "git");
