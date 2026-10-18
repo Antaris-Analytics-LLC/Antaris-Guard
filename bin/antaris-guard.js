@@ -14,9 +14,10 @@
  * explain judges and prints; it never writes the log.
  *
  * verify-log walks the decision log's chain and names every line that does not hold, saying when a
- * break looks like a fork (two lines sharing one prev); with
- * --tip it also requires the chain to end at that hash, which is how a rewrite of the whole file
- * is seen when the operator kept the tip somewhere no session can write. log prints the tip and
+ * break looks like a fork (two lines sharing one prev); with --tip it also names the line that
+ * carries that hash, which proves every line up to it unchanged, and fails when no line carries
+ * it, which is how a rewrite or a cut is seen when the operator kept the tip somewhere no session
+ * can write. log prints the tip and
  * the counts by decision, rule, day, session and tool, with the file's size. Both exit 0 when
  * the chain holds and 1 when it does not or there is no log.
  *
@@ -107,8 +108,8 @@ function verifyLog(tip) {
   out(`log: ${file}`);
   const r = log.verify(file, { tip });
   for (const b of r.breaks) out(brokenLine(b));
-  if (r.tipReason) out(`broken at line ${r.lines}: ${r.tipReason}`);
-  if (r.ok) out(`ok: ${r.lines} lines, tip ${r.tip}${tip !== undefined ? " (matches the tip given)" : ""}`);
+  if (tip !== undefined) out(r.tipReason ?? `the tip given is line ${r.tipLine}: every line up to it is as it was when the tip was noted`);
+  if (r.ok) out(`ok: ${r.lines} lines, tip ${r.tip}`);
   return r.ok ? 0 : 1;
 }
 

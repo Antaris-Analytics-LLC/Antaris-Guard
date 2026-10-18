@@ -180,8 +180,9 @@ fork. The README names the limit and how a fork reads next to tampering.
 
 `antaris-guard verify-log` walks the whole chain and reports every break, going on after each from
 the hash the broken line carries, and says when a break looks like a fork, two lines sharing one
-`prev`; with `--tip <hash>` it
-also requires the chain to end at that hash. `antaris-guard log` summarizes: decisions by rule,
+`prev`; with `--tip <hash>` it also names the line that carries that hash, which proves every
+line up to it is as it was when the tip was noted, and fails when no line carries it or the chain
+breaks at or before that line. `antaris-guard log` summarizes: decisions by rule,
 by day, by session, by tool, and prints the tip. What the chain proves: that no line was
 changed, added or removed by anyone who did not also recompute every line after it. What it
 does not prove: that the file is the one the hooks wrote, since whoever can write the file can

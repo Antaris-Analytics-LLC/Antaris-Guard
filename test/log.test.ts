@@ -52,7 +52,8 @@ describe("lib/log.js", () => {
     assert.equal(hash, log.sha256(JSON.stringify(rest)));
     assert.deepEqual(log.verify(file), { ok: true, lines: 2, tip: b.hash, breaks: [] });
     assert.equal(log.verify(file, { tip: b.hash }).ok, true);
-    assert.match(log.verify(file, { tip: "abc" }).reason, /^the chain ends at [0-9a-f]{64}, not at the tip abc$/);
+    assert.equal(log.verify(file, { tip: b.hash }).tipLine, 2);
+    assert.match(log.verify(file, { tip: "abc" }).reason, /^the tip given is not the hash of any line: /);
     assert.deepEqual(linesOf(file), [a, b]);
   });
 
@@ -89,6 +90,42 @@ describe("lib/log.js", () => {
     assert.match(log.verify(file).reason, /^could not read .*ENOENT/);
     assert.equal(log.verify(file).line, 0);
     assert.equal(log.verify(file).breaks.length, 1);
+  });
+
+  it("verify() with a tip: found on any line it holds, with every line up to it proven; missing, or broken up to it, it fails", () => {
+    const file = fiveLines();
+    const text = fs.readFileSync(file, "utf8");
+    const rows = text.trim().split("\n").map((t) => JSON.parse(t));
+    // The log has grown since the tip was noted at line 2: the tip holds, and so does the chain.
+    let r = log.verify(file, { tip: rows[1].hash });
+    assert.deepEqual([r.ok, r.tipLine, r.tipReason, r.lines], [true, 2, null, 5]);
+    // The tip on the last line, and on the first.
+    assert.equal(log.verify(file, { tip: rows[4].hash }).tipLine, 5);
+    assert.equal(log.verify(file, { tip: rows[0].hash }).tipLine, 1);
+    // No line carries it: the tip fails, with no break in the chain itself.
+    r = log.verify(file, { tip: "0".repeat(64) });
+    assert.deepEqual([r.ok, r.tipLine, r.breaks.length], [false, 0, 0]);
+    assert.match(r.tipReason, /^the tip given is not the hash of any line: the chain up to it was rewritten or cut, or the tip is from another log$/);
+    assert.equal(r.reason, r.tipReason);
+    // Lines cut from the end, through the line the tip names: no break is left, and only the tip finds the cut.
+    fs.writeFileSync(file, text.trim().split("\n").slice(0, 3).join("\n") + "\n");
+    assert.equal(log.verify(file).ok, true);
+    assert.equal(log.verify(file, { tip: rows[4].hash }).ok, false);
+    assert.equal(log.verify(file, { tip: rows[4].hash }).tipLine, 0);
+    // A break before the tip line, and on it: the lines up to the tip are not proven.
+    const lines = text.trim().split("\n");
+    fs.writeFileSync(file, [lines[0].replace('"session":"s"', '"session":"x"'), ...lines.slice(1)].join("\n") + "\n");
+    r = log.verify(file, { tip: rows[3].hash });
+    assert.equal(r.ok, false);
+    assert.equal(r.tipLine, 4);
+    assert.equal(r.tipReason, "the tip given is line 4, but the chain breaks at line 1, before it, so the lines up to the tip are not proven");
+    r = log.verify(file, { tip: rows[0].hash });
+    assert.equal(r.tipReason, "the tip given is line 1, but that line does not hold, so the lines up to it are not proven");
+    // A break after the tip line: the tip holds, the chain does not.
+    fs.writeFileSync(file, [...lines.slice(0, 3), lines[3].replace('"session":"s"', '"session":"x"'), lines[4]].join("\n") + "\n");
+    r = log.verify(file, { tip: rows[1].hash });
+    assert.deepEqual([r.ok, r.tipLine, r.tipReason], [false, 2, null]);
+    assert.deepEqual(r.breaks, [{ line: 4, reason: "hash does not match the line", fork: 0 }]);
   });
 
   it("verify() keeps walking after a break and lists every one, and marks a fork: two lines sharing one prev", () => {
@@ -361,10 +398,15 @@ describe("verify-log and log", () => {
     assert.match(r.stdout, new RegExp(`^config: .*\\nlog: .*log\\.jsonl\\nok: 2 lines, tip ${rows[1].hash}\\n$`));
     r = cli(["verify-log", "--tip", rows[1].hash], project);
     assert.equal(r.code, 0);
-    assert.match(r.stdout, /\(matches the tip given\)\n$/);
+    assert.match(r.stdout, new RegExp(`\\nthe tip given is line 2: every line up to it is as it was when the tip was noted\\nok: 2 lines, tip ${rows[1].hash}\\n$`));
+    // A tip noted earlier, with the log grown since: it names its line and passes.
     r = cli(["verify-log", `--tip=${rows[0].hash}`], project);
+    assert.equal(r.code, 0);
+    assert.match(r.stdout, /\nthe tip given is line 1: every line up to it is as it was when the tip was noted\nok: 2 lines, /);
+    // A tip no line carries fails, and says so.
+    r = cli(["verify-log", `--tip=${"0".repeat(64)}`], project);
     assert.equal(r.code, 1);
-    assert.match(r.stdout, /broken at line 2: the chain ends at [0-9a-f]{64}, not at the tip [0-9a-f]{64}\n$/);
+    assert.match(r.stdout, /\nthe tip given is not the hash of any line: the chain up to it was rewritten or cut, or the tip is from another log\n$/);
     const text = fs.readFileSync(logOf(project), "utf8").replace('"rule":"G07"', '"rule":"G06"');
     fs.writeFileSync(logOf(project), text);
     r = cli(["verify-log"], project);
