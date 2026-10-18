@@ -3,17 +3,20 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { ROOT, nest } from "./harness.ts";
+import { INVENTARIS, ROOT, nest } from "./harness.ts";
 
 /*
  * judge() as a library: the shape of a decision, the id on every block, G17 for a line the parser
  * cannot read and for a rule that throws, the rule order, and the registry of ids. The hooks are
- * CommonJS, so the tests load them with require.
+ * CommonJS, so the tests load them with require. Every call here hands judge() the worked example
+ * config, configs/inventaris.json, as the tables do.
  */
 const require = createRequire(import.meta.url);
 const { judge, blockedLine } = require(path.join(ROOT, "lib", "judge.js"));
 const { RULES, UNREADABLE, ALL } = require(path.join(ROOT, "lib", "rules", "index.js"));
 const parse = require(path.join(ROOT, "lib", "parse.js"));
+
+const CONFIG = INVENTARIS;
 
 // The ids and names docs/SPEC.md section 3 gives the v0.1 rules and G18, in the order v0.1 ran them.
 const ORDER = [
@@ -26,7 +29,7 @@ const ORDER = [
 
 describe("judge()", () => {
   it("allows with a null rule and the parse", () => {
-    const v = judge("git status --short");
+    const v = judge("git status --short", CONFIG);
     assert.equal(v.decision, "allow");
     assert.equal(v.rule, null);
     assert.equal(v.reason, "");
@@ -35,7 +38,7 @@ describe("judge()", () => {
   });
 
   it("denies with the rule's id, name, tier and reason", () => {
-    const v = judge("git push origin main");
+    const v = judge("git push origin main", CONFIG);
     assert.equal(v.decision, "deny");
     assert.equal(v.rule, "G07");
     assert.equal(v.name, "push-to-protected");
@@ -45,7 +48,7 @@ describe("judge()", () => {
   });
 
   it("collapses whitespace in the line it reports, as v0.1 did", () => {
-    const v = judge("git   push \t origin   main ");
+    const v = judge("git   push \t origin   main ", CONFIG);
     assert.equal(v.rule, "G07");
     assert.equal(v.parse.line, "git push origin main");
     assert.equal(blockedLine(v), "guard: blocked (G07 push-to-protected: direct push to main; open a PR instead): git push origin main");
@@ -53,13 +56,13 @@ describe("judge()", () => {
 
   it("reads a newline as a command separator, as the shell does", () => {
     // Two commands, git push and origin main: neither names main as a push target.
-    assert.equal(judge("git push\norigin main").decision, "allow");
-    assert.equal(judge("git status\ngit push origin main").rule, "G07");
+    assert.equal(judge("git push\norigin main", CONFIG).decision, "allow");
+    assert.equal(judge("git status\ngit push origin main", CONFIG).rule, "G07");
   });
 
   it("gives G17 to a line the parser cannot read, with the parser's words", () => {
     for (const [command, message] of [["echo 'unclosed", "an unclosed quote"], ["cat <<EOF", "a heredoc that never reaches EOF"]]) {
-      const v = judge(command);
+      const v = judge(command, CONFIG);
       assert.equal(v.rule, "G17");
       assert.equal(v.name, "unreadable");
       assert.equal(v.reason, `could not read the command: ${message}`);
@@ -71,7 +74,7 @@ describe("judge()", () => {
     const broken = { id: "T00", name: "throws", tier: "deny", reason: "never", test: () => { throw new Error("boom"); } };
     RULES.unshift(broken);
     try {
-      const v = judge("ls");
+      const v = judge("ls", CONFIG);
       assert.equal(v.decision, "deny");
       assert.equal(v.rule, "G17");
       assert.equal(v.reason, "the guard could not judge the command: boom");
@@ -80,24 +83,33 @@ describe("judge()", () => {
     }
   });
 
+  it("gives G17 to a missing or invalid config, before anything else", () => {
+    assert.equal(judge("ls").reason, "the config is not valid: no config was given");
+    assert.equal(judge("ls", { version: 1, foo: 1 }).reason, 'the config is not valid: unknown key "foo"');
+    const v = judge("echo 'unclosed", { version: 2 });
+    assert.equal(v.rule, "G17");
+    assert.equal(v.reason, "the config is not valid: version must be 1");
+    assert.equal(v.parse.line, "echo 'unclosed");
+  });
+
   it("runs the rules in v0.1's order, G18 last", () => {
     assert.deepEqual(RULES.map((r: { id: string; name: string }) => [r.id, r.name]), ORDER);
-    assert.equal(judge("sudo rm -rf /").rule, "G01");
-    assert.equal(judge("rm -rf out && npx playwright test").rule, "G02");
-    assert.equal(judge("npx playwright test && git push origin main").rule, "G07");
-    assert.equal(judge("npx playwright test").rule, "G18");
+    assert.equal(judge("sudo rm -rf /", CONFIG).rule, "G01");
+    assert.equal(judge("rm -rf out && npx playwright test", CONFIG).rule, "G02");
+    assert.equal(judge("npx playwright test && git push origin main", CONFIG).rule, "G07");
+    assert.equal(judge("npx playwright test", CONFIG).rule, "G18");
   });
 
   it("lets a rule name a more exact reason than its default", () => {
-    assert.equal(judge("find . -delete").reason, "find -delete is a delete");
-    assert.equal(judge("find . -exec rm {} \\;").reason, "find -exec rm is a delete");
-    assert.equal(judge("ls | xargs rm").reason, "xargs rm is a delete");
-    assert.equal(judge("npm install playwright").reason, "browser automation is off in this repo: playwright installed with npm; say what was blocked and stop");
+    assert.equal(judge("find . -delete", CONFIG).reason, "find -delete is a delete");
+    assert.equal(judge("find . -exec rm {} \\;", CONFIG).reason, "find -exec rm is a delete");
+    assert.equal(judge("ls | xargs rm", CONFIG).reason, "xargs rm is a delete");
+    assert.equal(judge("npm install playwright", CONFIG).reason, "browser automation is off in this repo: playwright installed with npm; say what was blocked and stop");
   });
 
   it("gives the same answer to the same command", () => {
     for (const command of ["git push origin main", "npm test", "npx playwright test", "echo 'unclosed"]) {
-      assert.deepEqual(judge(command), judge(command));
+      assert.deepEqual(judge(command, CONFIG), judge(command, CONFIG));
     }
   });
 });
@@ -129,13 +141,25 @@ describe("the rules", () => {
     assert.ok(source.includes(`block("${UNREADABLE.toolCall()}")`), "guard.js spells the tool-call reason differently");
     assert.ok(source.includes("`" + UNREADABLE.load(err).replace("why", "${message(err)}") + "`"), "guard.js spells the load reason differently");
     assert.ok(source.includes("`" + UNREADABLE.rule(err).replace("why", "${message(err)}") + "`"), "guard.js spells the judge reason differently");
-    assert.deepEqual(UNREADABLE.reasons, ["could not read the tool call", "could not read the command: <why>", "the guard could not judge the command: <why>", "the guard could not load: <why>"]);
+    assert.ok(source.includes("`" + UNREADABLE.readConfig(err).replace("why", "${message(err)}") + "`"), "guard.js spells the config reason differently");
+    assert.deepEqual(UNREADABLE.reasons, [
+      "could not read the tool call",
+      "could not read the command: <why>",
+      "the guard could not judge the command: <why>",
+      "the guard could not load: <why>",
+      "could not read the config: <why>",
+      "the config is not valid: <why>",
+    ]);
+    assert.equal(UNREADABLE.config(err), "the config is not valid: why");
   });
 
   it("print no em dashes", () => {
     const emDash = String.fromCharCode(0x2014);
     for (const rule of ALL) {
       for (const text of [rule.reason, ...(rule.reasons || [])]) assert.ok(!text.includes(emDash), `${rule.id}: ${text}`);
+    }
+    for (const text of [judge("cat secrets/x", { version: 1, protectedPaths: ["secrets/"], operator: "Ann" }).reason, judge("ls").reason, judge("ls", { version: 1, rules: { G01: "ask" } }).reason]) {
+      assert.ok(!text.includes(emDash), text);
     }
   });
 });
@@ -146,6 +170,7 @@ describe("parse()", () => {
     assert.equal(p.line, "bash -c 'cd x && node -e \"1+1\"' | tail -1");
     assert.deepEqual(p.commands.map((c: string[]) => [...c]), [["bash", "-c", 'cd x && node -e "1+1"'], ["cd", "x"], ["node", "-e", "1+1"], ["tail", "-1"]]);
     assert.deepEqual(p.commands.map((c: string[] & { piped?: boolean }) => !!c.piped), [false, false, false, true]);
+    assert.deepEqual(p.commands.map((c: string[] & { depth?: number }) => c.depth), [0, 1, 1, 0]);
     assert.deepEqual(p.inlineCode, ["1+1"]);
   });
 
