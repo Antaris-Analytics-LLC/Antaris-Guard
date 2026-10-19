@@ -53,10 +53,9 @@ describe("compare: the v0.1 Bash table through v0.1 and the current guard", () =
   for (const command of bash.ALLOWED) {
     it(`same allow: ${command}`, () => {
       const was = runGuard(FROZEN.guard, command), now = runGuard(CURRENT.guard, command);
-      assert.equal(was.code, 0, `v0.1 blocked: ${was.stderr}`);
-      assert.equal(now.code, 0, `the current guard blocked: ${now.stderr}`);
-      assert.equal(was.stderr, "");
-      assert.equal(now.stderr, "");
+      // An allow is silence: exit 0 with nothing printed, so an ask cannot pass as one.
+      assert.equal(was.decision, "allow", `v0.1 did not allow in silence: ${was.stderr}`);
+      assert.equal(now.decision, "allow", `the current guard did not allow in silence: ${now.stderr}${now.stdout}`);
     });
   }
 
@@ -81,8 +80,8 @@ describe("compare: G18's table, R1's listed difference", () => {
   for (const command of g18.ALLOWED) {
     it(`same allow: ${command}`, () => {
       const was = runGuard(FROZEN.guard, command), now = runGuard(CURRENT.guard, command);
-      assert.equal(was.code, 0, `v0.1 blocked: ${was.stderr}`);
-      assert.equal(now.code, 0, `the current guard blocked: ${now.stderr}`);
+      assert.equal(was.decision, "allow", `v0.1 did not allow in silence: ${was.stderr}`);
+      assert.equal(now.decision, "allow", `the current guard did not allow in silence: ${now.stderr}${now.stdout}`);
     });
   }
 });
@@ -103,7 +102,7 @@ for (const [round, table] of ROUNDS) {
         const before = runGuard(FROZEN.guard, command), now = runGuard(CURRENT.guard, command);
         assert.equal(before.code, 2, `v0.1 allowed this, so it is not a loosening: ${before.stderr}`);
         assert.match(before.reason, was, `v0.1 blocked it for another reason: ${before.stderr}`);
-        assert.equal(now.code, 0, `the current guard still blocks: ${now.stderr}`);
+        assert.equal(now.decision, "allow", `the current guard does not allow it in silence: ${now.stderr}${now.stdout}`);
       });
     }
 
@@ -130,8 +129,8 @@ for (const [round, table] of ROUNDS) {
     for (const command of table.ALLOWED) {
       it(`same allow: ${command.slice(0, 80)}`, () => {
         const was = runGuard(FROZEN.guard, command), now = runGuard(CURRENT.guard, command);
-        assert.equal(was.code, 0, `v0.1 blocked: ${was.stderr.slice(0, 300)}`);
-        assert.equal(now.code, 0, `the current guard blocked: ${now.stderr.slice(0, 300)}`);
+        assert.equal(was.decision, "allow", `v0.1 did not allow in silence: ${was.stderr.slice(0, 300)}`);
+        assert.equal(now.decision, "allow", `the current guard did not allow in silence: ${now.stderr.slice(0, 300)}${now.stdout.slice(0, 300)}`);
       });
     }
   });
@@ -165,7 +164,11 @@ describe("compare: the subagent table through v0.1 and the current hook", () => 
 describe("compare: the count", () => {
   it("reports zero differences apart from the listed new blocks, new allows and new reasons", (t) => {
     let differences = 0, newBlocks = 0, newAllows = 0, newReasons = 0;
-    const same = (command: string) => { const was = runGuard(FROZEN.guard, command), now = runGuard(CURRENT.guard, command); return was.code === now.code && stripId(now.stderr) === was.stderr; };
+    // The same answer, of the three, and the same stderr line once the id is stripped, so an ask cannot pass as an allow.
+    const same = (command: string) => {
+      const was = runGuard(FROZEN.guard, command), now = runGuard(CURRENT.guard, command);
+      return was.decision === now.decision && stripId(now.stderr) === was.stderr && now.stdout === was.stdout;
+    };
     const rounds = ROUNDS.map(([, table]) => table);
     const unchanged = [...bash.BLOCKED.map(([c]) => c), ...bash.ALLOWED, ...g18.ALLOWED, ...rounds.flatMap((r) => [...r.UNCHANGED.map(([c]) => c), ...r.ALLOWED])];
     const blocked = [...g18.BLOCKED, ...rounds.flatMap((r) => r.BLOCKED)];

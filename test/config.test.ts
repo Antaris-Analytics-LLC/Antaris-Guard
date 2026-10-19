@@ -115,9 +115,17 @@ describe("validation", () => {
     ["a secretPaths entry with a slash", { version: 1, secretPaths: ["config/.env"] }, /secretPaths: "config\/.env" is a path, not a file name pattern/],
     ["rules as a list", { version: 1, rules: ["G01"] }, /rules must be an object/],
     ["a rule id the guard does not have", { version: 1, rules: { G99: "off" } }, /rules.G99 names a rule the guard does not have/],
-    ["a rule set to ask", { version: 1, rules: { G01: "ask" } }, /rules.G01 must be "deny" or "off", not "ask"; the ask tier is not in this version/],
-    ["a rule set to allow", { version: 1, rules: { G01: "allow" } }, /rules.G01 must be "deny" or "off", not "allow"/],
-    ["a rule set to true", { version: 1, rules: { G01: true } }, /rules.G01 must be "deny" or "off"/],
+    // Since R4 a rule can be ask, so this row now holds the never-off rule that refuses it; the never-off set is never ask (below).
+    ["a never-off rule set to ask", { version: 1, rules: { G07: "ask" } }, /rules.G07 cannot be ask/],
+    ["a rule set to allow", { version: 1, rules: { G01: "allow" } }, /rules.G01 must be "deny", "ask" or "off", not "allow"/],
+    ["a rule set to true", { version: 1, rules: { G01: true } }, /rules.G01 must be "deny", "ask" or "off"/],
+    ["G02 ask", { version: 1, rules: { G02: "ask" } }, /rules.G02 cannot be ask/],
+    ["G06 ask", { version: 1, rules: { G06: "ask" } }, /rules.G06 cannot be ask/],
+    ["G09 ask", { version: 1, rules: { G09: "ask" } }, /rules.G09 cannot be ask/],
+    ["G10 ask", { version: 1, rules: { G10: "ask" } }, /rules.G10 cannot be ask/],
+    ["G12 ask", { version: 1, rules: { G12: "ask" } }, /rules.G12 cannot be ask/],
+    ["G16 ask", { version: 1, rules: { G16: "ask" } }, /rules.G16 cannot be ask/],
+    ["G17 ask", { version: 1, rules: { G17: "ask" } }, /rules.G17 cannot be ask/],
     ["G02 off", { version: 1, rules: { G02: "off" } }, /rules.G02 cannot be off/],
     ["G06 off", { version: 1, rules: { G06: "off" } }, /rules.G06 cannot be off/],
     ["G07 off", { version: 1, rules: { G07: "off" } }, /rules.G07 cannot be off/],
@@ -138,6 +146,12 @@ describe("validation", () => {
   it("accepts deny for any rule, and off for an optional one", () => {
     const v = config.validate({ version: 1, rules: { G01: "off", G07: "deny", G17: "deny", G18: "off", "aws-cdk-01": "deny" } });
     assert.deepEqual(v.rules, { G01: "off", G07: "deny", G17: "deny", G18: "off", "aws-cdk-01": "deny" });
+  });
+
+  it("accepts ask for any rule outside the never-off set, a pack rule included", () => {
+    const v = config.validate({ version: 1, rules: { G01: "ask", G03: "ask", G18: "ask", "docker-01": "ask" } });
+    assert.deepEqual(v.rules, { G01: "ask", G03: "ask", G18: "ask", "docker-01": "ask" });
+    assert.deepEqual(config.TIERS, ["deny", "ask", "off"]);
   });
 
   it("names the never-off set the spec gives, G24 to join when it lands", () => {
@@ -314,9 +328,12 @@ describe("the rules that read config", () => {
 describe("the v0.1 table under the built-in defaults", () => {
   it("differs from the run under configs/inventaris.json in exactly the cases that depend on Inventaris's lists", () => {
     const differences: string[] = [];
-    const outcome = (command: string, project: string) => { const r = runGuard(CURRENT.guard, command, project); return `${r.code} ${r.stderr}`; };
-    // What a run came to, in a few words: allowed, or the rule that blocked, and whether the reason names the operator.
-    const summary = (run: string) => (run.startsWith("0") ? "allowed" : `${run.match(/\((\S+ \S+): /)?.[1]}${run.includes("changed by the operator") ? ", changed by the operator" : ""}`);
+    const outcome = (command: string, project: string) => { const r = runGuard(CURRENT.guard, command, project); return `${r.decision} ${r.stderr}${r.stdout}`; };
+    // What a run came to, in a few words: allowed, the rule that asked, or the rule that blocked and whether the reason names the operator.
+    const summary = (run: string) =>
+      run.startsWith("allow") ? "allowed"
+        : run.startsWith("ask") ? `${run.match(/guard: ask \((\S+ \S+): /)?.[1]} (ask)`
+          : `${run.match(/\((\S+ \S+): /)?.[1]}${run.includes("changed by the operator") ? ", changed by the operator" : ""}`;
     for (const command of [...bash.BLOCKED.map(([c]) => c), ...bash.ALLOWED]) {
       const inv = outcome(command, inventarisProject()), def = outcome(command, defaultsProject());
       if (inv !== def) differences.push(`${command} :: ${summary(inv)} -> ${summary(def)}`);

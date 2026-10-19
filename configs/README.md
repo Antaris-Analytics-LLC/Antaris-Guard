@@ -31,12 +31,13 @@ non-empty strings with no whitespace in them.
 | `secretEnv` | G09 | `["AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "DATABASE_URL", "GITHUB_TOKEN"]` | Environment variables that carry a secret; setting one on a command line is blocked. Each must be a variable name. Cannot be empty. |
 | `credentialPaths` | G13 | `["~/.aws", "~/.ssh", "~/.config", "~/.netrc", "~/.npmrc"]` | Credential directories and files, matched as a prefix anywhere in the line, so `~/.aws` covers `~/.aws/credentials`. |
 | `blockedPrograms` | G01 | `["sudo", "su", "curl", "wget", "ssh", "scp", "nc", "ncat", "telnet", "dd", "mkfs", "crontab", "eval", "base64", "xxd"]` | Programs that may not run, matched as a command anywhere in the line. The defaults leave `python`, `python3`, `pip` and `pip3` out because most repositories need them; `inventaris.json` adds them back. |
-| `rules` | the judge | `{}` | A map of rule id to `"deny"` or `"off"`. `"off"` turns an optional rule off; `"deny"` is the default and changes nothing this version. The rules that are never off refuse `"off"`: G02, G06, G07, G09, G10, G12, G16, G17. The three pack rules (`aws-cdk-01`, `aws-cdk-02`, `docker-01`) refuse it too until packs arrive. An id the guard does not have fails. `"ask"` fails; the ask tier is a later version. |
+| `rules` | the judge | `{}` | A map of rule id to `"deny"`, `"ask"` or `"off"`. `"deny"` and `"ask"` set the rule's tier, in place of its default; `"off"` turns an optional rule off. A rule cannot be set to allow: off is the only way to stop it. The rules that are never off refuse `"off"` and `"ask"` both: G02, G06, G07, G09, G10, G12, G16, G17. The three pack rules (`aws-cdk-01`, `aws-cdk-02`, `docker-01`) refuse `"off"` until packs arrive, and accept `"ask"`. An id the guard does not have fails. A deny wins over an ask on the same line, whichever rule runs first. No rule asks by default: prompting is Claude Code's own settings' job, and `"ask"` is for an operator who wants one of the guard's rules to prompt instead of block. |
 | `log` | both hooks | `{ "enabled": true, "path": ".claude/guard/log.jsonl" }` | The decision log. `enabled: false` writes nothing. `path` is relative to the project root and must sit under `.claude/` or under a folder that `protectedPaths` names (an entry ending in `/`): a log the session's shell can name is a log it can edit, so an absolute path, a path with `..` in it, a path at the project root or under any other folder fails validation, naming the path. The two keys are the only ones; anything else under `log` fails. |
 
-Keys from the design that later versions read (`remotes`, `askPrograms`, `packs`, `scan`,
-`subagents`) fail validation until the version that reads them lands, so a key the guard does not
-act on never looks like a rule in force.
+Keys from the design that later versions read (`remotes`, `packs`, `scan`, `subagents`) fail
+validation until the version that reads them lands, so a key the guard does not act on never looks
+like a rule in force. `askPrograms` is not one of them: round 4 dropped it, since Claude Code's
+own settings already ask about programs, and it fails as an unknown key.
 
 ## Seeing what the guard sees
 
@@ -47,7 +48,7 @@ node bin/antaris-guard.js explain "git status | tail -1"
 prints the config file it read, where the log goes, the commands on the line with their programs,
 the shell strings and inline code it lifted out, and the decision with its rule and reason. It
 reads the config the way the hook does, from `CLAUDE_PROJECT_DIR` or the working directory. Exit 0
-is allow, exit 2 is deny, the same as the hook. `verify-log` and `log` read the same config to find
+is allow or ask, exit 2 is deny, the same as the hook, and the decision line says which. `verify-log` and `log` read the same config to find
 the log:
 
 ```

@@ -132,7 +132,7 @@ describe("judge()", () => {
 });
 
 describe("the rules", () => {
-  it("each export an id, a name, a deny tier, a reason and a test", () => {
+  it("each export an id, a name, a deny tier, a reason and a test: no rule asks by default", () => {
     for (const rule of RULES) {
       assert.match(rule.id, /^(G\d\d|[a-z][a-z0-9-]*-\d\d)$/, rule.id);
       assert.match(rule.name, /^[a-z][a-z0-9-]*$/, rule.id);

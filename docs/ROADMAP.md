@@ -155,6 +155,18 @@ Questions for Jake:
 3. What `ask` says to the operator. (a) The rule, the reason and the command, nothing else.
    (b) Also the last three decisions from the log, for context.
 
+What R4 became, on Jake's answers of 2026-10-19: the guard is a buffer against honest mistakes
+and stays light. Claude Code's own permission settings already ask about pushes and programs, so
+a second layer of prompts in the guard would only add steps; G21 and G22 are dropped, their ids
+retired, and `askPrograms` is not a key. The ask answer is built and stays opt-in: no rule asks
+by default, and a config can move one of the guard's own rules to ask instead of turning it off.
+What `ask` says is the rule, the reason and the command (answer 3a). A deny wins over an ask on
+the same line. A rule the config turns off has no effect at all, and nothing is logged for it.
+The exit test that ran: the v0.1 table passes unchanged under `configs/inventaris.json`, every
+allowed case silent; the ask answer is tested through the hook with a config that moves two rules
+to ask. The asks that later rounds name (a missing script in R5, the packs' asks in R6) are read
+against this when those rounds start.
+
 ## R5: what the command runs, and what it hides
 
 Goal: the two known gaps, closed as far as a text judgment can close them.
