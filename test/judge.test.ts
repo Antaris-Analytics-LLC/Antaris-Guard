@@ -25,10 +25,7 @@ const ORDER = [
   ["G09", "secret-on-command-line"], ["G10", "command-substitution"], ["G11", "pipe-into-interpreter"], ["G12", "reads-secret-file"],
   ["G13", "credential-directory"], ["aws-cdk-01", "cdk-deploy-or-destroy"], ["G14", "push-or-deploy-in-inline-code"], ["aws-cdk-02", "prod-profile"],
   ["docker-01", "docker-outside-postgres"], ["G15", "wide-chmod"], ["G16", "protected-path"], ["G18", "browser-automation"],
-  ["G21", "push-to-branch"],
 ];
-/** The rules whose default tier is ask; every other rule's is deny. */
-const ASK_BY_DEFAULT = ["G21"];
 
 describe("judge()", () => {
   it("allows with a null rule and the parse", () => {
@@ -95,7 +92,7 @@ describe("judge()", () => {
     assert.equal(v.parse.line, "echo 'unclosed");
   });
 
-  it("runs the rules in v0.1's order, G18 after them, and the ask-by-default rules last", () => {
+  it("runs the rules in v0.1's order, G18 last", () => {
     assert.deepEqual(RULES.map((r: { id: string; name: string }) => [r.id, r.name]), ORDER);
     assert.equal(judge("sudo rm -rf /", CONFIG).rule, "G01");
     assert.equal(judge("rm -rf out && npx playwright test", CONFIG).rule, "G02");
@@ -135,11 +132,11 @@ describe("judge()", () => {
 });
 
 describe("the rules", () => {
-  it("each export an id, a name, a default tier, a reason and a test", () => {
+  it("each export an id, a name, a deny tier, a reason and a test: no rule asks by default", () => {
     for (const rule of RULES) {
       assert.match(rule.id, /^(G\d\d|[a-z][a-z0-9-]*-\d\d)$/, rule.id);
       assert.match(rule.name, /^[a-z][a-z0-9-]*$/, rule.id);
-      assert.equal(rule.tier, ASK_BY_DEFAULT.includes(rule.id) ? "ask" : "deny", rule.id);
+      assert.equal(rule.tier, "deny", rule.id);
       assert.equal(typeof rule.reason, "string", rule.id);
       assert.ok(rule.reason.length > 0, rule.id);
       assert.equal(typeof rule.test, "function", rule.id);

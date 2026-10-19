@@ -39,8 +39,8 @@
  * The stderr line keeps v0.1's shape, with the rule's id and name at the front of the reason:
  *   guard: blocked (G07 push-to-protected: direct push to main; open a PR instead): git push origin main
  *   guard: blocked (G17 unreadable: the guard could not load: Cannot find module '.../lib/judge.js')
- * and an ask's reason, shown in the permission prompt, has the same shape:
- *   guard: ask (G21 push-to-branch: a push leaves the machine; confirm it): git push -u origin m1/x
+ * and an ask's reason, shown in the permission prompt for a rule the config moves to ask, has the same shape:
+ *   guard: ask (docker-01 docker-outside-postgres: docker outside running a local Postgres): docker exec pg psql
  */
 "use strict";
 

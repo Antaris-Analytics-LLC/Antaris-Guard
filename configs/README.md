@@ -16,9 +16,7 @@ with the reason saying what is wrong. Absence is refusal: a file that git can re
 anyone naming it (checking out an older commit) must not quietly loosen the guard.
 
 `inventaris.json` in this folder is the worked example: the values v0.1 had hard-coded, for the
-repository the test table was written for. The table runs under it. Its `rules` map turns G21
-off, since Inventaris pushes a branch in every round; leave that line out to have every push to a
-branch asked. Copy it to
+repository the test table was written for. The table runs under it. Copy it to
 `.claude/guard.config.json` and edit, or write the file from the keys below. Validation is strict:
 `version` is required, unknown keys fail (a `$comment` key included), and every list is a list of
 non-empty strings with no whitespace in them.
@@ -33,12 +31,13 @@ non-empty strings with no whitespace in them.
 | `secretEnv` | G09 | `["AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "DATABASE_URL", "GITHUB_TOKEN"]` | Environment variables that carry a secret; setting one on a command line is blocked. Each must be a variable name. Cannot be empty. |
 | `credentialPaths` | G13 | `["~/.aws", "~/.ssh", "~/.config", "~/.netrc", "~/.npmrc"]` | Credential directories and files, matched as a prefix anywhere in the line, so `~/.aws` covers `~/.aws/credentials`. |
 | `blockedPrograms` | G01 | `["sudo", "su", "curl", "wget", "ssh", "scp", "nc", "ncat", "telnet", "dd", "mkfs", "crontab", "eval", "base64", "xxd"]` | Programs that may not run, matched as a command anywhere in the line. The defaults leave `python`, `python3`, `pip` and `pip3` out because most repositories need them; `inventaris.json` adds them back. |
-| `rules` | the judge | `{}` | A map of rule id to `"deny"`, `"ask"` or `"off"`. `"deny"` and `"ask"` set the rule's tier, in place of its default; `"off"` turns an optional rule off. A rule cannot be set to allow: off is the only way to stop it. The rules that are never off refuse `"off"` and `"ask"` both: G02, G06, G07, G09, G10, G12, G16, G17. The three pack rules (`aws-cdk-01`, `aws-cdk-02`, `docker-01`) refuse `"off"` until packs arrive, and accept `"ask"`. An id the guard does not have fails. A deny wins over an ask on the same line, whichever rule runs first. |
+| `rules` | the judge | `{}` | A map of rule id to `"deny"`, `"ask"` or `"off"`. `"deny"` and `"ask"` set the rule's tier, in place of its default; `"off"` turns an optional rule off. A rule cannot be set to allow: off is the only way to stop it. The rules that are never off refuse `"off"` and `"ask"` both: G02, G06, G07, G09, G10, G12, G16, G17. The three pack rules (`aws-cdk-01`, `aws-cdk-02`, `docker-01`) refuse `"off"` until packs arrive, and accept `"ask"`. An id the guard does not have fails. A deny wins over an ask on the same line, whichever rule runs first. No rule asks by default: prompting is Claude Code's own settings' job, and `"ask"` is for an operator who wants one of the guard's rules to prompt instead of block. |
 | `log` | both hooks | `{ "enabled": true, "path": ".claude/guard/log.jsonl" }` | The decision log. `enabled: false` writes nothing. `path` is relative to the project root and must sit under `.claude/` or under a folder that `protectedPaths` names (an entry ending in `/`): a log the session's shell can name is a log it can edit, so an absolute path, a path with `..` in it, a path at the project root or under any other folder fails validation, naming the path. The two keys are the only ones; anything else under `log` fails. |
 
-Keys from the design that later versions read (`remotes`, `askPrograms`, `packs`, `scan`,
-`subagents`) fail validation until the version that reads them lands, so a key the guard does not
-act on never looks like a rule in force.
+Keys from the design that later versions read (`remotes`, `packs`, `scan`, `subagents`) fail
+validation until the version that reads them lands, so a key the guard does not act on never looks
+like a rule in force. `askPrograms` is not one of them: round 4 dropped it, since Claude Code's
+own settings already ask about programs, and it fails as an unknown key.
 
 ## Seeing what the guard sees
 

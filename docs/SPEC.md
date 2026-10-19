@@ -13,12 +13,14 @@ A judgment has three outcomes:
 | Decision | What happens | Default for |
 | --- | --- | --- |
 | `allow` | The command runs. | Everything no rule names. |
-| `ask` | Claude Code asks the operator before running it, showing the rule and reason. | Reversible but consequential: a push to a branch, `npm publish`, `docker run`, writing outside the project. |
+| `ask` | Claude Code asks the operator before running it, showing the rule and reason. | Nothing by default. A rule the config moves to ask. Prompting for commands is Claude Code's own permission settings' job, and the guard does not add a second layer of prompts on top of them. |
 | `deny` | The command does not run; the session sees the rule and reason. | Irreversible or exfiltrating: force push, push to a protected branch, secrets, recursive deletes, browser automation, deploys. |
 
-Every rule has a default tier. Config can move a rule between `ask` and `deny`, or turn an
-optional rule off. A rule cannot be moved to `allow`; turning it off is the only way to stop it,
-and the log records that the config did so.
+Every rule has a default tier, and since R4 every default tier is `deny`. Config can move a rule
+between `ask` and `deny`, or turn an optional rule off. A rule cannot be moved to `allow`; turning
+it off is the only way to stop it, and a rule turned off has no effect at all, logged or
+otherwise: the operator turned it off on purpose. A deny wins over an ask on the same line,
+whichever rule comes first.
 
 How each answer reaches Claude Code:
 
@@ -68,7 +70,7 @@ front of the reason, so the v0.1 test harness still reads it:
 
 ```
 guard: blocked (G07 push-to-protected: direct push to main; open a PR instead): git push origin main
-guard: ask (G21 push-to-branch: a push leaves the machine; confirm it): git push -u origin m1/x
+guard: ask (docker-01 docker-outside-postgres: docker outside running a local Postgres): docker exec pg psql
 ```
 
 The reason text of every v0.1 rule is kept word for word, because the v0.1 table matches on it.
@@ -98,8 +100,8 @@ Ids never change meaning. A retired rule's id is not reused.
 | G18 | browser-automation | deny | new: playwright, puppeteer, chromium, pw-browsers, headless, selenium, webdriver |
 | G19 | push-to-url-or-unknown-remote | deny | new: `git push https://...`, a remote not in config, `git remote add` or `set-url` |
 | G20 | script-file | by what it finds | new: the text of a script the command runs, judged by G03, G14, G18 and the packs |
-| G21 | push-to-branch | ask | new: any push not caught by G06, G07 or G19 |
-| G22 | network-program | ask | new: programs that reach the network and are not in G01, configurable |
+| G21 | push-to-branch | dropped in R4 | Claude Code's own settings already ask about a push; the id is not reused |
+| G22 | ask-program | dropped in R4 | Claude Code's own settings already ask about a program; the id is not reused |
 | G23 | variable-command | deny | new: a git subcommand or a program that comes from a variable the guard cannot resolve |
 | G24 | guard-install | deny | new: `antaris-guard init` or `upgrade`, by name or by script path; installing the guard is the operator's act |
 
@@ -134,9 +136,8 @@ command with `G17` and the validation message.
   "secretEnv": ["AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "DATABASE_URL", "GITHUB_TOKEN"],
   "credentialPaths": ["~/.aws", "~/.ssh", "~/.config", "~/.netrc", "~/.npmrc"],
   "blockedPrograms": ["sudo", "su", "curl", "wget", "ssh", "scp", "nc", "ncat", "telnet", "dd", "mkfs", "crontab", "eval", "base64", "xxd", "python", "python3", "pip", "pip3"],
-  "askPrograms": ["aws", "gcloud", "az", "kubectl", "terraform"],
   "packs": ["node", "aws-cdk", "docker"],
-  "rules": { "G21": "off", "docker-01": "ask" },
+  "rules": { "docker-01": "ask" },
   "scan": { "enabled": true, "maxBytes": 262144 },
   "log": { "enabled": true, "path": ".claude/guard/log.jsonl" },
   "subagents": { "maxPerSession": 5, "models": ["sonnet", "opus", "haiku"], "forks": false, "isolation": false }

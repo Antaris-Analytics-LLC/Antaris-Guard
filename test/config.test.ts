@@ -34,7 +34,7 @@ describe("the defaults and the worked example", () => {
     assert.ok(!(DEFAULTS.secretEnv as string[]).includes("COGNITO_CLIENT_SECRET"));
   });
 
-  it("configs/inventaris.json validates and is the v0.1 set: Jake, python and pip blocked, COGNITO in secretEnv, G21 off", () => {
+  it("configs/inventaris.json validates and is the v0.1 set: Jake, python and pip blocked, COGNITO in secretEnv", () => {
     const v = config.validate(INVENTARIS);
     assert.equal(v.operator, "Jake");
     for (const p of ["python", "python3", "pip", "pip3"]) assert.ok(v.blockedPrograms.includes(p), p);
@@ -42,8 +42,7 @@ describe("the defaults and the worked example", () => {
     assert.deepEqual(v.protectedBranches, ["main", "master"]);
     assert.deepEqual(v.secretPaths, [".env", ".env.*", "*.pem", "*.key", "*.p12"]);
     assert.deepEqual(v.credentialPaths, ["~/.aws", "~/.ssh", "~/.config", "~/.netrc", "~/.npmrc"]);
-    // Inventaris pushes a branch in every round, so G21 is off there and the v0.1 table's branch pushes stay allowed.
-    assert.deepEqual(v.rules, { G21: "off" });
+    assert.deepEqual(v.rules, {});
   });
 
   it("fills the defaults in for keys a file leaves out, and a given list replaces the default rather than adding to it", () => {
@@ -267,8 +266,7 @@ describe("the rules that read config", () => {
     assert.equal(judge("git push origin release", release).rule, "G07");
     assert.equal(judge("git push origin release", release).reason, "direct push to main; open a PR instead");
     assert.equal(judge("git push origin HEAD:refs/heads/release", release).rule, "G07");
-    // main is not protected here, so G07 does not deny the push; since R4 it is an ask, G21's.
-    assert.deepEqual([judge(PUSH, release).decision, judge(PUSH, release).rule], ["ask", "G21"]);
+    assert.equal(judge(PUSH, release).decision, "allow");
     assert.equal(judge("git push origin master", INVENTARIS).rule, "G07");
   });
 
@@ -328,7 +326,7 @@ describe("the rules that read config", () => {
 });
 
 describe("the v0.1 table under the built-in defaults", () => {
-  it("differs from the run under configs/inventaris.json in exactly the cases that depend on Inventaris's lists and rules", () => {
+  it("differs from the run under configs/inventaris.json in exactly the cases that depend on Inventaris's lists", () => {
     const differences: string[] = [];
     const outcome = (command: string, project: string) => { const r = runGuard(CURRENT.guard, command, project); return `${r.decision} ${r.stderr}${r.stdout}`; };
     // What a run came to, in a few words: allowed, the rule that asked, or the rule that blocked and whether the reason names the operator.
@@ -348,12 +346,6 @@ describe("the v0.1 table under the built-in defaults", () => {
       // The operator is not named by default.
       `sed -i 's/a/b/' ${DOT_CLAUDE}/settings.json :: G16 protected-path -> G16 protected-path, changed by the operator`,
       "echo x >> CLAUDE.md :: G16 protected-path -> G16 protected-path, changed by the operator",
-      // G21 asks by default; the worked example turns it off, so these five stay allowed there.
-      "git push -u origin m1/x :: allowed -> G21 push-to-branch (ask)",
-      "git push -u origin m1/calendar-screen-2; git log --oneline origin/main..HEAD :: allowed -> G21 push-to-branch (ask)",
-      "git push origin m1/main-docs :: allowed -> G21 push-to-branch (ask)",
-      "git push origin m1/x && rm -f notes.txt :: allowed -> G21 push-to-branch (ask)",
-      "git push origin m1/x 2>&1 | tail -2 :: allowed -> G21 push-to-branch (ask)",
     ]);
   });
 
