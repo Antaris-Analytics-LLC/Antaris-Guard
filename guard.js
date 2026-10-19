@@ -13,8 +13,9 @@
  * a shell would run it, so chained commands, subshells, pipes into interpreters, shell strings,
  * inline code and secret-shaped arguments are caught too.
  *
- * The guard fails closed by itself. A tool call that is not JSON, a config file that is missing
- * or unreadable or not JSON or not valid, a log that cannot be written, a lib/ folder that is
+ * The guard fails closed by itself. A tool call that is not JSON, a config file that is
+ * unreadable or not JSON or not valid, a fallback it cannot read, arguments it does not take, a
+ * log that cannot be written, a lib/ folder that is
  * missing or a rule file that throws when it loads, and anything else that throws anywhere in
  * this process, is a G17 block with exit 2, never a crash with exit 1. Claude Code reads exit 1 as
  * a non-blocking error unless the hook has onFailure: block (2.1.295 and later), so that setting
@@ -28,8 +29,10 @@
  * prints and a second line says the log failed.
  *
  * The config is .claude/guard.config.json under the project root: CLAUDE_PROJECT_DIR when Claude
- * Code sets it, else the cwd field of the tool call, else this process's working directory. No
- * file is a block, naming the file: absence is refusal.
+ * Code sets it, else the cwd field of the tool call, else this process's working directory. With
+ * no file there, the guard judges by its fallback: configs/<name>.json beside lib/ when it was
+ * started as `node guard.js --fallback <name>`, as an organization's plugin edition starts it,
+ * else the built-in defaults (round 4b; until then no file was a block).
  *
  * The parser is lib/parse.js, the rules are lib/rules/ (one file each, with an id), the order
  * they run in is lib/rules/index.js, the config is lib/config.js and the log is lib/log.js. This
@@ -55,15 +58,15 @@ const couldNotLoad = (err) => block(`the guard could not load: ${message(err)}`)
 process.on("uncaughtException", couldNotLoad);
 process.on("unhandledRejection", couldNotLoad);
 
-let judge, blockedLine, askLine, readConfig, projectDir, validate, logPath, appendLog, sha256, homedir, writeSync;
+let judge, blockedLine, askLine, resolveConfig, fallbackArg, projectDir, validate, logPath, appendLog, sha256, homedir, writeSync;
 try {
   const path = require("node:path");
   homedir = require("node:os").homedir;
   ({ writeSync } = require("node:fs"));
   ({ judge, blockedLine, askLine } = require(path.join(__dirname, "lib", "judge.js")));
   if (typeof judge !== "function" || typeof blockedLine !== "function" || typeof askLine !== "function") throw new Error("lib/judge.js does not export judge(), blockedLine() and askLine()");
-  ({ readConfig, projectDir, validate } = require(path.join(__dirname, "lib", "config.js")));
-  if (typeof readConfig !== "function" || typeof projectDir !== "function" || typeof validate !== "function") throw new Error("lib/config.js does not export readConfig(), projectDir() and validate()");
+  ({ resolveConfig, fallbackArg, projectDir, validate } = require(path.join(__dirname, "lib", "config.js")));
+  if (typeof resolveConfig !== "function" || typeof fallbackArg !== "function" || typeof projectDir !== "function" || typeof validate !== "function") throw new Error("lib/config.js does not export resolveConfig(), fallbackArg(), projectDir() and validate()");
   ({ logPath, append: appendLog, sha256 } = require(path.join(__dirname, "lib", "log.js")));
   if (typeof logPath !== "function" || typeof appendLog !== "function" || typeof sha256 !== "function") throw new Error("lib/log.js does not export logPath(), append() and sha256()");
 } catch (err) {
@@ -85,10 +88,11 @@ process.stdin.on("end", () => {
   const line = cmd.replace(/\s+/g, " ").trim();
   const dir = projectDir({ env: process.env, cwd: unreadable ? undefined : call.cwd });
 
-  // The config comes first, even for a tool call that is not JSON, so that decision is logged too.
+  // The config comes first, even for a tool call that is not JSON, so that decision is logged too:
+  // the project's file, or the fallback when there is none.
   let raw;
   try {
-    ({ raw } = readConfig(dir));
+    ({ raw } = resolveConfig(dir, fallbackArg(process.argv.slice(2))));
   } catch (err) {
     block(`could not read the config: ${message(err)}`, unreadable ? undefined : line);
   }

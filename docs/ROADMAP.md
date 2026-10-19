@@ -1,7 +1,7 @@
 # Antaris-Guard v0.2: the rounds
 
-Eight rounds, each one pull request, each with an exit test that CI runs. `docs/SPEC.md` says
-what v0.2 is; this file says the order. A round starts with the session's plan and the round's
+Eight rounds, and one more that came up between them (R4b), each one pull request, each with an
+exit test that CI runs. `docs/SPEC.md` says what v0.2 is; this file says the order. A round starts with the session's plan and the round's
 questions, and the build starts after Jake answers. Where a question has a recommendation, it is
 the first option, and Jake's answer in the PR thread is the record.
 
@@ -167,6 +167,49 @@ allowed case silent; the ask answer is tested through the hook with a config tha
 to ask. The asks that later rounds name (a missing script in R5, the packs' asks in R6) are read
 against this when those rounds start.
 
+## R4b: the plugin
+
+Goal: the guard in every cloud session, however many repositories it has attached.
+
+Why: a cloud session with two or more repositories reads no hooks, permission rules or env from
+any repository's `.claude/settings.json` (Claude Code's cloud documentation, read 2026-10-19).
+The guard was wired through that file, so with a second repository attached nothing in it ran:
+not the guard, not the subagent guard, not the denies, not the subagent caps. A ParsiClaude session
+found it on 2026-10-19, after a second repository was attached to it mid-session.
+
+Decided, on Jake's answers of 2026-10-19:
+
+- The guard ships as a Claude Code plugin from this repository's marketplace, turned on for the
+  organization through server-managed settings, which reach cloud sessions of every shape but
+  Claude Tag's. A probe plugin proved the route first: in a new cloud session with two repositories
+  attached, neither of them this one, its hook blocked on the first command; a plugin hook that
+  crashed was a block under `onFailure: block`; an ordinary command passed; no approval prompt
+  appeared. The managed settings carry `forceRemoteSettingsRefresh` and
+  `CLAUDE_CODE_SYNC_PLUGIN_INSTALL`.
+- A missing config falls back instead of blocking: the public edition to the built-in defaults,
+  Antaris Analytics' edition to its own config, `configs/antaris-analytics.json` (the defaults plus
+  `aws` blocked; `ANTHROPIC_API_KEY`, `PARSICLAUDE_TOKENS` and `COGNITO_CLIENT_SECRET` in
+  `secretEnv`; `*.env` in `secretPaths`; `python` and `pip` allowed). A config that is there but
+  broken still blocks.
+- G16 lets the exact folder name `.claude-plugin` through, and nothing else after `.claude-`.
+- The denies and subagent caps of `settings.example.json` move into the managed settings,
+  written to match any repository under the session's folder, with the Read denies a
+  repository's settings put on secret files and credential folders (Jake, before merge): the
+  guard does not see the Read tool, so only the settings can keep it off those files.
+- The managed settings pin the marketplace to a tag, and a GitHub tag ruleset lets only Jake
+  create or move tags.
+- Repositories take their own hook entries out only after the real plugin's exit test passes.
+
+Exit test: the tables pass with the new cases on both sides; `claude plugin validate` passes on
+the marketplace and both editions install from it; then, after merge, in a new cloud session with
+two repositories attached and neither of them this one, the organization's edition blocks
+`aws s3 ls` on the first command (only its config blocks `aws`) and lets `echo hello` through.
+CI green.
+
+This replaces most of R7 for Antaris Analytics' own use: the plugin is the install, the managed
+settings are the rollout, and a tag is the version. R7's `init`, `check` and package stay for
+anyone who installs per repository.
+
 ## R5: what the command runs, and what it hides
 
 Goal: the two known gaps, closed as far as a text judgment can close them.
@@ -237,6 +280,10 @@ Questions for Jake:
 ## R7: the command line and the package
 
 Goal: installable by a person in one command, verifiable in CI, and untouchable by a session.
+
+Since R4b, most of this is done another way for Antaris Analytics' own use: the plugin is the
+install and a tag is the version. What follows stays for anyone who installs per repository, and
+is read against R4b when the round starts.
 
 Builds:
 

@@ -84,6 +84,12 @@ export const bashCall = (command: string, session = "test-session"): string => J
 /** The Bash guard at `file`, given a Bash tool call for `command`. */
 export const runGuard = (file: string, command: string, project?: string): GuardRun => runGuardRaw(file, bashCall(command), project);
 
+/** The Bash guard at `file` started with `args`, as a plugin edition's hook starts it (node guard.js --fallback <name>), given a Bash tool call for `command`. */
+export function runGuardWithArgs(file: string, args: string[], command: string, project: string = inventarisProject()): GuardRun {
+  const run = spawnSync(process.execPath, [file, ...args], { input: bashCall(command), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: project }, maxBuffer: 64 * 1024 * 1024 });
+  return readRun(run.status, run.stdout, run.stderr);
+}
+
 /** The Bash guard at `file`, started once per command at the same time, as parallel tool calls run it; resolves to each run's exit code and stderr. */
 export function runGuardParallel(file: string, commands: string[], project: string = inventarisProject()): Promise<{ code: number | null; stderr: string }[]> {
   return Promise.all(commands.map((command) => new Promise<{ code: number | null; stderr: string }>((resolve) => {
@@ -133,10 +139,10 @@ export function tempEnv(extra: Record<string, string>, project: string = inventa
 
 export type SubagentRun = { code: number | null; stderr: string };
 
-/** The subagent guard at `file`, given a payload (an object, or a raw string) on stdin. */
-export function runSubagent(file: string, payload: unknown, env: NodeJS.ProcessEnv): SubagentRun {
+/** The subagent guard at `file`, given a payload (an object, or a raw string) on stdin, started with `args` (none unless a test names a fallback). */
+export function runSubagent(file: string, payload: unknown, env: NodeJS.ProcessEnv, args: string[] = []): SubagentRun {
   const text = typeof payload === "string" ? payload : JSON.stringify(payload);
-  const r = spawnSync(process.execPath, [file], { input: text, env, encoding: "utf8" });
+  const r = spawnSync(process.execPath, [file, ...args], { input: text, env, encoding: "utf8" });
   return { code: r.status, stderr: (r.stderr || "").trim() };
 }
 
