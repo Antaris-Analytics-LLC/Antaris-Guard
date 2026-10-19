@@ -1,5 +1,5 @@
 {
-  "$comment": "Antaris-Guard repo policy for Claude Code. Commit as .claude/settings.json so every session inherits it. Deny wins over allow. Bash rules are prefix matches on the first command; the hooks under .claude/hooks judge the whole line. Adapted from Inventaris's settings with the AWS, cdk, Docker and Postgres lines removed, since this repository has none of those, and the browser-automation denies added.",
+  "$comment": "Antaris-Guard repo policy for Claude Code. Commit as .claude/settings.json so every session inherits it. Deny wins over allow. Bash rules are prefix matches on the first command; the guard plugin, which the organization's managed settings turn on, judges the whole line. Adapted from Inventaris's settings with the AWS, cdk, Docker and Postgres lines removed, since this repository has none of those, and the browser-automation denies added.",
 
   "permissions": {
     "defaultMode": "acceptEdits",
@@ -74,7 +74,7 @@
       "Read(~/.netrc)",
       "Read(~/.npmrc)",
       "Read(~/.gitconfig)",
-      "Read(/opt/pw-browsers/**)",
+      "Read(//opt/pw-browsers/**)",
       "Edit(./.env)",
       "Edit(./.env.*)",
       "Edit(~/**)",
@@ -156,32 +156,5 @@
     "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "1",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "0",
     "CLAUDE_CODE_DISABLE_WORKFLOWS": "1"
-  },
-
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node",
-            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.js"],
-            "onFailure": "block"
-          }
-        ]
-      },
-      {
-        "matcher": "Agent|Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node",
-            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/subagent-guard.js"],
-            "onFailure": "block"
-          }
-        ]
-      }
-    ]
   }
 }
