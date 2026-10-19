@@ -2,15 +2,16 @@
 /*
  * Antaris-Guard: the command line. Three commands this round:
  *
- *   node bin/antaris-guard.js explain "<command>"
- *   node bin/antaris-guard.js verify-log [--tip <hash>]
- *   node bin/antaris-guard.js log
+ *   node bin/antaris-guard.js explain [--fallback <name>] "<command>"
+ *   node bin/antaris-guard.js verify-log [--fallback <name>] [--tip <hash>]
+ *   node bin/antaris-guard.js log [--fallback <name>]
  *
  * explain prints what the parser saw (the commands with their programs, which are piped, which
  * came out of a shell string, the inline code) and the decision with its rule and reason, reading
  * the config the hook would read: .claude/guard.config.json under CLAUDE_PROJECT_DIR, else the
- * working directory. Exit 0 is allow or ask, exit 2 is deny, as the hook does it, and the
- * decision line says which; exit 1 is a usage
+ * working directory, and with no file there the fallback the hook would use, which --fallback
+ * names as the hook's own argument does (the built-in defaults without it). Exit 0 is allow or
+ * ask, exit 2 is deny, as the hook does it, and the decision line says which; exit 1 is a usage
  * error. A config the guard cannot read is a deny with G17's reason, as the hook does it.
  * explain judges and prints; it never writes the log.
  *
@@ -30,40 +31,46 @@ const path = require("node:path");
 const os = require("node:os");
 const { judge } = require(path.join(__dirname, "..", "lib", "judge.js"));
 const { parse, programOf } = require(path.join(__dirname, "..", "lib", "parse.js"));
-const { readConfig, projectDir, validate } = require(path.join(__dirname, "..", "lib", "config.js"));
+const { configPath, resolveConfig, projectDir, validate } = require(path.join(__dirname, "..", "lib", "config.js"));
 const { UNREADABLE } = require(path.join(__dirname, "..", "lib", "rules", "index.js"));
 const log = require(path.join(__dirname, "..", "lib", "log.js"));
 
 const out = (s = "") => process.stdout.write(`${s}\n`);
-const usage = () => { process.stderr.write('usage: antaris-guard explain "<command>" | verify-log [--tip <hash>] | log\n'); process.exit(1); };
+const usage = () => { process.stderr.write('usage: antaris-guard explain [--fallback <name>] "<command>" | verify-log [--fallback <name>] [--tip <hash>] | log [--fallback <name>]\n'); process.exit(1); };
+
+/** The config line: the project's file, or which fallback stands in for a missing one. */
+function configLine(dir, found) {
+  if (found.source === "project") return `config: ${found.path}`;
+  const by = found.source === "defaults" ? "the built-in defaults" : `the fallback ${found.path}`;
+  return `config: none at ${configPath(dir)}; judged by ${by}`;
+}
 
 /** The config the hook would read, validated, or null after printing why not. */
-function settingsOrNull() {
+function settingsOrNull(fallback) {
   const dir = projectDir({ env: process.env });
-  let raw, file;
+  let found;
   try {
-    ({ raw, path: file } = readConfig(dir));
+    found = resolveConfig(dir, fallback);
   } catch (err) {
     out(`config: none (${err.message})`);
     return null;
   }
+  out(configLine(dir, found));
   let settings;
   try {
-    settings = validate(raw);
+    settings = validate(found.raw);
   } catch (err) {
-    out(`config: ${file}`);
     out(`config: not valid (${err.message})`);
     return null;
   }
-  out(`config: ${file}`);
-  return { dir, settings, file };
+  return { dir, settings };
 }
 
-function explain(command) {
+function explain(command, fallback) {
   const dir = projectDir({ env: process.env });
-  let config, configPath;
+  let found;
   try {
-    ({ raw: config, path: configPath } = readConfig(dir));
+    found = resolveConfig(dir, fallback);
   } catch (err) {
     out(`config: none (${err.message})`);
     out(`command: ${command}`);
@@ -72,7 +79,8 @@ function explain(command) {
     out(`reason: ${UNREADABLE.readConfig(err)}`);
     return 2;
   }
-  out(`config: ${configPath}`);
+  const config = found.raw;
+  out(configLine(dir, found));
   const verdict = judge(command, config, { home: os.homedir() });
   let logLine = "log: not known until the config is valid";
   try { const file = log.logPath(validate(config), dir); logLine = `log: ${file ?? "off"}`; } catch { /* the decision below says why */ }
@@ -102,8 +110,8 @@ function explain(command) {
   return verdict.decision === "ask" ? 0 : 2;
 }
 
-function verifyLog(tip) {
-  const found = settingsOrNull();
+function verifyLog(tip, fallback) {
+  const found = settingsOrNull(fallback);
   if (!found) return 1;
   const file = log.logPath(found.settings, found.dir);
   if (!file) { out("log: off (the config turns the log off)"); return 1; }
@@ -118,8 +126,8 @@ function verifyLog(tip) {
 /** One break as a line of output, saying when it looks like a fork. */
 const brokenLine = (b) => `broken at line ${b.line}: ${b.reason}${b.fork ? `; lines ${b.fork} and ${b.line} share one prev, which looks like a fork: two hooks appending at once` : ""}`;
 
-function showLog() {
-  const found = settingsOrNull();
+function showLog(fallback) {
+  const found = settingsOrNull(fallback);
   if (!found) return 1;
   const file = log.logPath(found.settings, found.dir);
   if (!file) { out("log: off (the config turns the log off)"); return 1; }
@@ -146,15 +154,22 @@ function showLog() {
   return s.chain.ok ? 0 : 1;
 }
 
-const [, , verb, ...rest] = process.argv;
-if (verb === "explain" && rest.length === 1) process.exit(explain(rest[0]));
+const [, , verb, ...args] = process.argv;
+// --fallback <name> comes first after the command, as the hook's own argument names its fallback.
+let fallback, rest = args;
+if (rest[0] === "--fallback") {
+  if (rest.length < 2) usage();
+  fallback = rest[1];
+  rest = rest.slice(2);
+}
+if (verb === "explain" && rest.length === 1) process.exit(explain(rest[0], fallback));
 if (verb === "verify-log") {
   let tip;
   if (rest.length === 0) tip = undefined;
   else if (rest.length === 2 && rest[0] === "--tip") tip = rest[1];
   else if (rest.length === 1 && rest[0].startsWith("--tip=")) tip = rest[0].slice("--tip=".length);
   else usage();
-  process.exit(verifyLog(tip));
+  process.exit(verifyLog(tip, fallback));
 }
-if (verb === "log" && rest.length === 0) process.exit(showLog());
+if (verb === "log" && rest.length === 0) process.exit(showLog(fallback));
 usage();

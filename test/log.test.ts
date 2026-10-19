@@ -269,10 +269,12 @@ describe("the hooks and the log", () => {
     assert.equal(log.verify(logOf(project)).ok, true);
   });
 
-  it("the subagent hook fails closed on a missing config, an unwritable log, and a lib/ it cannot load", () => {
-    const missing = runSubagent(CURRENT.subagent, agentCall({ model: "sonnet" }), tempEnv(SETTINGS, projectWith(null)));
-    assert.equal(missing.code, 2);
-    assert.match(missing.stderr, /^subagent-guard: blocked \(could not read the config: .* is missing/);
+  it("the subagent hook judges a missing config by the defaults, and fails closed on an unwritable log and a lib/ it cannot load", () => {
+    // Round 4b: no config is no longer a block; the defaults judge and say where the log goes.
+    const none = projectWith(null);
+    const missing = runSubagent(CURRENT.subagent, agentCall({ model: "sonnet" }), tempEnv(SETTINGS, none));
+    assert.equal(missing.code, 0, missing.stderr);
+    assert.deepEqual(linesOf(logOf(none)).map((row) => [row.tool, row.decision]), [["Agent", "allow"]]);
     const project = freshProject();
     fs.mkdirSync(logOf(project), { recursive: true });
     const unwritable = runSubagent(CURRENT.subagent, agentCall({ model: "sonnet" }), tempEnv(SETTINGS, project));
@@ -429,9 +431,10 @@ describe("verify-log and log", () => {
     r = cli(["verify-log"], projectWith({ ...INVENTARIS, log: { enabled: false } }));
     assert.equal(r.code, 1);
     assert.match(r.stdout, /log: off \(the config turns the log off\)\n$/);
+    // No config: the defaults say where the log goes, and there is none there yet (round 4b; it was "config: none").
     r = cli(["verify-log"], projectWith(null));
     assert.equal(r.code, 1);
-    assert.match(r.stdout, /^config: none \(.* is missing/);
+    assert.match(r.stdout, /^config: none at .*; judged by the built-in defaults\nlog: .*log\.jsonl\nbroken at line 0: could not read .*ENOENT/);
     r = cli(["verify-log", "--tip"], project);
     assert.equal(r.code, 1);
     assert.match(r.stderr, /^usage: /);

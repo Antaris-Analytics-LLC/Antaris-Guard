@@ -1,0 +1,49 @@
+{
+  "name": "antaris-guard",
+  "owner": { "name": "Antaris Analytics LLC" },
+  "description": "Antaris-Guard as a Claude Code plugin: a fail-closed command guard for coding agents. Two editions of the same code; install antaris-guard unless you are Antaris Analytics.",
+  "plugins": [
+    {
+      "name": "antaris-guard",
+      "source": "./",
+      "description": "The Bash guard and the subagent guard. Each repository's .claude/guard.config.json decides; where there is none, the built-in defaults do.",
+      "hooks": {
+        "PreToolUse": [
+          {
+            "matcher": "Bash",
+            "hooks": [
+              { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/guard.js"], "onFailure": "block" }
+            ]
+          },
+          {
+            "matcher": "Agent|Task",
+            "hooks": [
+              { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/subagent-guard.js"], "onFailure": "block" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "antaris-guard-antaris-analytics",
+      "source": "./",
+      "description": "Antaris Analytics' own edition of the same guard: where a repository has no config, configs/antaris-analytics.json decides instead of the generic defaults. Everyone else should install antaris-guard.",
+      "hooks": {
+        "PreToolUse": [
+          {
+            "matcher": "Bash",
+            "hooks": [
+              { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/guard.js", "--fallback", "antaris-analytics"], "onFailure": "block" }
+            ]
+          },
+          {
+            "matcher": "Agent|Task",
+            "hooks": [
+              { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/subagent-guard.js", "--fallback", "antaris-analytics"], "onFailure": "block" }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

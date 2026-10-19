@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "operator": "Jake",
+  "protectedBranches": ["main", "master"],
+  "protectedPaths": [".claude/", "CLAUDE.md", ".mcp.json"],
+  "secretPaths": [".env", ".env.*", "*.env", "*.pem", "*.key", "*.p12"],
+  "secretEnv": ["AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "DATABASE_URL", "GITHUB_TOKEN", "ANTHROPIC_API_KEY", "PARSICLAUDE_TOKENS", "COGNITO_CLIENT_SECRET"],
+  "credentialPaths": ["~/.aws", "~/.ssh", "~/.config", "~/.netrc", "~/.npmrc"],
+  "blockedPrograms": ["sudo", "su", "curl", "wget", "ssh", "scp", "nc", "ncat", "telnet", "dd", "mkfs", "crontab", "eval", "base64", "xxd", "aws"],
+  "rules": {},
+  "log": { "enabled": true, "path": ".claude/guard/log.jsonl" }
+}

@@ -9,8 +9,9 @@ import * as bash from "./tables/bash.ts";
 
 /*
  * lib/config.js: the defaults, the worked example, the lookup of the file, each kind of invalid
- * file, and what the hook does with no file (blocks everything, naming the file), an unreadable
- * one, and one that fails validation. Then the rules that read config, each with a custom value
+ * file, and what the hook does with no file (judges by the built-in defaults since round 4b, by
+ * Jake's answer of 2026-10-19; a block before), an unreadable one, and one that fails validation.
+ * The named fallbacks are in test/plugin.test.ts. Then the rules that read config, each with a custom value
  * that blocks and one that allows, and the comparison the roadmap asks for: which cases of the
  * v0.1 table come out differently under the built-in defaults than under configs/inventaris.json.
  */
@@ -192,14 +193,14 @@ describe("validation", () => {
 });
 
 describe("the hook and the config file", () => {
-  it("no file blocks every command with G17, naming the missing file and who writes it", () => {
+  it("no file judges every command by the built-in defaults (round 4b, Jake's answer of 2026-10-19; it was a G17 block)", () => {
     const dir = projectWith(null);
-    for (const command of [PUSH, "git status --short", "ls"]) {
-      const r = runGuard(CURRENT.guard, command, dir);
-      assert.equal(r.code, 2, r.stderr);
-      assert.match(r.stderr, /^guard: blocked \(G17 unreadable: could not read the config: .*guard\.config\.json is missing; the operator writes it, following configs\/README\.md\): /);
-      assert.ok(r.stderr.endsWith(`): ${command}`), r.stderr);
-    }
+    const push = runGuard(CURRENT.guard, PUSH, dir);
+    assert.equal(push.code, 2, push.stderr);
+    assert.equal(push.stderr, `guard: blocked (G07 push-to-protected: direct push to main; open a PR instead): ${PUSH}`);
+    assert.match(runGuard(CURRENT.guard, "curl https://example.com", dir).stderr, /^guard: blocked \(G01 blocked-program: /);
+    // What the defaults allow and the worked example blocks: python, so it is the defaults judging.
+    for (const command of ["git status --short", "ls", "python3 -c 'print(1)'"]) assert.equal(runGuard(CURRENT.guard, command, dir).decision, "allow", command);
   });
 
   it("a file that is not JSON blocks every command with G17", () => {
@@ -226,14 +227,19 @@ describe("the hook and the config file", () => {
     const r = runGuardWithCwd(CURRENT.guard, PUSH, inventarisProject());
     assert.equal(r.code, 2);
     assert.match(r.stderr, /^guard: blocked \(G07 push-to-protected: /);
-    assert.match(runGuardWithCwd(CURRENT.guard, "ls", projectWith(null)).stderr, /could not read the config: .* is missing/);
+    // No file under the cwd: the defaults judge (round 4b; it was a block).
+    assert.equal(runGuardWithCwd(CURRENT.guard, "ls", projectWith(null)).decision, "allow");
+    assert.equal(runGuardWithCwd(CURRENT.guard, PUSH, projectWith(null)).code, 2);
   });
 
-  it("a good file judges as before, and the same call with the file removed is a block", () => {
+  it("a good file judges as before, and with the file removed the defaults judge instead (round 4b: the old-checkout case Jake traded for honest mistakes; it was a block)", () => {
     const dir = projectWith(INVENTARIS);
     assert.equal(runGuard(CURRENT.guard, "git status --short", dir).code, 0);
+    assert.match(runGuard(CURRENT.guard, "python3 -c 'print(1)'", dir).stderr, /^guard: blocked \(G01 blocked-program: /);
     fs.rmSync(path.join(dir, ".claude", "guard.config.json"));
-    assert.match(runGuard(CURRENT.guard, "git status --short", dir).stderr, /could not read the config: .* is missing/);
+    assert.equal(runGuard(CURRENT.guard, "git status --short", dir).decision, "allow");
+    assert.equal(runGuard(CURRENT.guard, "python3 -c 'print(1)'", dir).decision, "allow");
+    assert.equal(runGuard(CURRENT.guard, PUSH, dir).code, 2);
   });
 });
 

@@ -40,11 +40,32 @@ describe("antaris-guard explain", () => {
     assert.match(r.stdout, /rule: G17 unreadable \(deny\)\nreason: could not read the command: an unclosed quote\n$/);
   });
 
-  it("with no config file, says so and denies with G17, exit 2", () => {
-    const r = runExplain(["explain", "ls"], projectWith(null));
+  it("with no config file, says the built-in defaults judge, as the hook does (round 4b; it was a G17 deny)", () => {
+    const dir = projectWith(null);
+    const r = runExplain(["explain", "ls"], dir);
+    assert.equal(r.code, 0, r.stdout);
+    assert.ok(r.stdout.startsWith(`config: none at ${path.join(dir, ".claude", "guard.config.json")}; judged by the built-in defaults\n`), r.stdout);
+    assert.match(r.stdout, /decision: allow\n$/);
+    assert.equal(runExplain(["explain", "git push origin main"], dir).code, 2);
+  });
+
+  it("with no config file and --fallback, says which fallback judges, as the plugin's org edition does", () => {
+    const r = runExplain(["explain", "--fallback", "antaris-analytics", "aws s3 ls"], projectWith(null));
+    assert.equal(r.code, 2, r.stdout);
+    assert.match(r.stdout, /^config: none at .*; judged by the fallback .*configs\/antaris-analytics\.json\n/);
+    assert.match(r.stdout, /rule: G01 blocked-program \(deny\)/);
+  });
+
+  it("with a config file, --fallback changes nothing: the file judges", () => {
+    const r = runExplain(["explain", "--fallback", "antaris-analytics", "python3 -c 'print(1)'"], inventarisProject());
+    assert.ok(r.stdout.startsWith(`config: ${inventarisProject()}`), r.stdout);
+    assert.equal(r.code, 2, r.stdout);
+  });
+
+  it("a fallback it cannot read is a deny with G17, exit 2", () => {
+    const r = runExplain(["explain", "--fallback", "no-such-config", "ls"], projectWith(null));
     assert.equal(r.code, 2);
-    assert.match(r.stdout, /^config: none \(.*guard\.config\.json is missing; the operator writes it, following configs\/README\.md\)\n/);
-    assert.match(r.stdout, /decision: deny\nrule: G17 unreadable \(deny\)\nreason: could not read the config: .* is missing/);
+    assert.match(r.stdout, /reason: could not read the config: the fallback .*no-such-config\.json could not be read: ENOENT\n$/);
   });
 
   it("with a config that fails validation, denies with G17 and the message", () => {
@@ -67,7 +88,7 @@ describe("antaris-guard explain", () => {
   });
 
   it("prints usage and exits 1 without a command", () => {
-    for (const args of [[], ["explain"], ["explain", "a", "b"], ["judge", "ls"]]) {
+    for (const args of [[], ["explain"], ["explain", "a", "b"], ["judge", "ls"], ["explain", "--fallback"], ["explain", "--fallback", "antaris-analytics"]]) {
       const r = runExplain(args);
       assert.equal(r.code, 1, args.join(" "));
       assert.match(r.stderr, /^usage: antaris-guard explain "<command>"/);
