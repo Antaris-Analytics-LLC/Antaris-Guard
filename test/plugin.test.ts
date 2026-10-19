@@ -206,12 +206,14 @@ describe("the managed settings block in the README, the one an Owner pastes", ()
   const section = readme.slice(readme.indexOf("### As a plugin, for an organization"));
   const start = section.indexOf("```json\n") + "```json\n".length;
   const block = JSON.parse(section.slice(start, section.indexOf("\n```", start)));
-  // What a repository's settings give a one-repository session today, written from the session's
+  // What the repositories' settings give a one-repository session today, written from the session's
   // folder so a session with several repositories gets it for each: the protected files, the
-  // secret files and credential folders (the guard does not see the Read tool), and the subagent tools.
+  // secret files and credential folders (the guard does not see the Read tool), and the subagent
+  // tools. Plus the plugin's own folder under the home folder, where the guard runs once the plugin
+  // is on, outside the session folder, and where the guard does not see the Edit or Write tools.
   const DENY = [
-    "Edit(.claude/**)", "Edit(CLAUDE.md)", "Edit(.mcp.json)",
-    "Read(./.env)", "Read(./.env.*)", "Read(./**/.env)", "Read(./**/.env.*)",
+    "Edit(.claude/**)", "Edit(CLAUDE.md)", "Edit(.mcp.json)", "Edit(~/.claude/plugins/**)",
+    "Read(./.env)", "Read(./.env.*)", "Read(./**/.env)", "Read(./**/.env.*)", "Read(./**/*.env)",
     "Read(~/.aws/**)", "Read(~/.ssh/**)", "Read(~/.config/**)", "Read(~/.netrc)", "Read(~/.npmrc)", "Read(~/.gitconfig)",
     "Agent(fork)", "Workflow", "RemoteTrigger",
   ];
@@ -225,7 +227,7 @@ describe("the managed settings block in the README, the one an Owner pastes", ()
     assert.equal(block.forceRemoteSettingsRefresh, true);
   });
 
-  it("carries the denies a one-repository session has today, the Read denies on secret files and credential folders included", () => {
+  it("carries the denies a one-repository session has today, the Read denies on secret files and credential folders included, and keeps the edit tools off the plugin's own folder", () => {
     assert.deepEqual(block.permissions.deny, DENY);
   });
 
