@@ -201,6 +201,41 @@ describe("configs/antaris-analytics.json, Jake's own config", () => {
   });
 });
 
+describe("the managed settings block in the README, the one an Owner pastes", () => {
+  const readme = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
+  const section = readme.slice(readme.indexOf("### As a plugin, for an organization"));
+  const start = section.indexOf("```json\n") + "```json\n".length;
+  const block = JSON.parse(section.slice(start, section.indexOf("\n```", start)));
+  // What a repository's settings give a one-repository session today, written from the session's
+  // folder so a session with several repositories gets it for each: the protected files, the
+  // secret files and credential folders (the guard does not see the Read tool), and the subagent tools.
+  const DENY = [
+    "Edit(.claude/**)", "Edit(CLAUDE.md)", "Edit(.mcp.json)",
+    "Read(./.env)", "Read(./.env.*)", "Read(./**/.env)", "Read(./**/.env.*)",
+    "Read(~/.aws/**)", "Read(~/.ssh/**)", "Read(~/.config/**)", "Read(~/.netrc)", "Read(~/.npmrc)", "Read(~/.gitconfig)",
+    "Agent(fork)", "Workflow", "RemoteTrigger",
+  ];
+
+  it("parses, pins the marketplace to a ref, and turns on one edition", () => {
+    assert.deepEqual(Object.keys(block.extraKnownMarketplaces), ["antaris-guard"]);
+    const m = block.extraKnownMarketplaces["antaris-guard"];
+    assert.deepEqual([m.source.source, m.source.repo, m.autoUpdate], ["github", "Antaris-Analytics-LLC/Antaris-Guard", false]);
+    assert.ok(typeof m.source.ref === "string" && m.source.ref.length > 0);
+    assert.deepEqual(block.enabledPlugins, { "antaris-guard@antaris-guard": true });
+    assert.equal(block.forceRemoteSettingsRefresh, true);
+  });
+
+  it("carries the denies a one-repository session has today, the Read denies on secret files and credential folders included", () => {
+    assert.deepEqual(block.permissions.deny, DENY);
+  });
+
+  it("carries settings.example.json's subagent caps, and makes a session wait for the plugin", () => {
+    const { $comment, ...caps } = JSON.parse(fs.readFileSync(path.join(ROOT, "settings.example.json"), "utf8")).env;
+    assert.ok($comment);
+    assert.deepEqual(block.env, { CLAUDE_CODE_SYNC_PLUGIN_INSTALL: "1", ...caps });
+  });
+});
+
 describe("the marketplace file: two editions of one plugin", () => {
   type Hook = { type: string; command: string; args: string[]; onFailure: string };
   type Entry = { name: string; source: string; description: string; hooks: { PreToolUse: { matcher: string; hooks: Hook[] }[] } };

@@ -162,7 +162,7 @@ Be clear about this with whoever reads the guard's log.
 - **Shell variables.** `x=push; git $x origin main` is not expanded by the guard. The same rule covers it, and round 5 closes it.
 - **Anything set before the line.** The guard judges one line at a time. A variable, a function or an alias set outside the line it judges, by an earlier tool call or a file sourced earlier, still reaches the commands on it, the uploads read included: `LD_PRELOAD` exported two tool calls ago loads its code into the `cat` that reads an upload. That is the same class as a script file, and the same rule covers it.
 - **A string run by a program the guard does not read yet.** `sh -c`, `bash -c`, `npx -c`, `npm exec -c` and `flock -c` are read as commands; `find -exec sh -c`, `script -c`, `watch`, `env -S`, `parallel` and `tmux new-session` run strings too and are not read yet. Nor is `$'...'` quoting, which the parser reads as a word beginning with `$`, so `bash -c $'git push origin main'` is not seen as the push it is; nor `git push --mirror`, which pushes every branch without naming one and so passes G07. Round 5 reads them, each with its cases.
-- **Anything outside Bash and Agent calls.** Edits go through the permission lists in settings, which is where `.claude/`, `CLAUDE.md`, `.mcp.json` and `/opt/pw-browsers/` are denied to the Read and Edit tools. Under the plugin, the managed settings carry those denies for every session.
+- **Anything outside Bash and Agent calls.** Edits go through the permission lists in settings, which is where `.claude/`, `CLAUDE.md`, `.mcp.json` and `/opt/pw-browsers/` are denied to the Read and Edit tools. Under the plugin, the managed settings carry the protected-file denies, and the Read denies on secret files and credential folders, for every session; the `/opt/pw-browsers/` deny stays in each repository's settings.
 - **A folder whose config went missing.** Since round 4b a missing config is judged by the fallback instead of blocked. A repository whose file disappears (an older commit checked out, say) is judged by the generic defaults, or by the organization's config under its edition, not by its own lists, until the file is back. That was the trade, chosen for a guard against honest mistakes.
 - **A session the plugin does not reach.** The plugin runs where the organization's server-managed settings reach: cloud sessions of any shape and Claude Code signed in to the organization. They do not reach Claude Tag sessions, Cowork sessions in the desktop app, or a Claude Code that uses another provider (Bedrock, Vertex and the like) or another account. There the per-repository install is the guard, and a session with several repositories has none.
 - **A plugin that does not install.** `forceRemoteSettingsRefresh` stops a session that cannot fetch the managed settings, and `CLAUDE_CODE_SYNC_PLUGIN_INSTALL` makes it wait for the install, but if the install itself fails (the marketplace cannot be fetched, say) the session runs without the guard. Claude Code reports it under `/plugin`; nothing documented stops the session.
@@ -196,7 +196,12 @@ An Owner of a Claude Team or Enterprise organization turns one edition on for ev
   "enabledPlugins": { "antaris-guard@antaris-guard": true },
   "forceRemoteSettingsRefresh": true,
   "permissions": {
-    "deny": ["Edit(.claude/**)", "Edit(CLAUDE.md)", "Edit(.mcp.json)", "Agent(fork)", "Workflow", "RemoteTrigger"]
+    "deny": [
+      "Edit(.claude/**)", "Edit(CLAUDE.md)", "Edit(.mcp.json)",
+      "Read(./.env)", "Read(./.env.*)", "Read(./**/.env)", "Read(./**/.env.*)",
+      "Read(~/.aws/**)", "Read(~/.ssh/**)", "Read(~/.config/**)", "Read(~/.netrc)", "Read(~/.npmrc)", "Read(~/.gitconfig)",
+      "Agent(fork)", "Workflow", "RemoteTrigger"
+    ]
   },
   "env": {
     "CLAUDE_CODE_SYNC_PLUGIN_INSTALL": "1",
@@ -212,7 +217,7 @@ An Owner of a Claude Team or Enterprise organization turns one edition on for ev
 
 - `ref` pins the marketplace to a tag, so a new version reaches sessions only when the Owner moves the pin. Protect the tags with a GitHub tag ruleset (Settings > Rules > Rulesets > New tag ruleset: all tags, restrict creations, updates and deletions, the Owner alone on the bypass list), so no one else can create or move the tag the organization runs.
 - `forceRemoteSettingsRefresh` stops a session that cannot fetch these settings, instead of starting it without them, and `CLAUDE_CODE_SYNC_PLUGIN_INSTALL` makes a session wait for the plugin before its first turn. A test of the plugin route in cloud sessions, with two repositories attached and neither of them this one, found the hook live on the first command and `onFailure: block` holding for a plugin hook that crashed.
-- The denies and the `env` block are `settings.example.json`'s, carried in managed settings because a session with several repositories reads neither from a repository. The `Edit` rules are written relative to the session's folder, so in a session with several repositories they cover every repository under it.
+- The `Edit`, `Agent`, `Workflow` and `RemoteTrigger` denies and the `env` block are `settings.example.json`'s. The `Read` denies are the ones a repository's settings put on secret files and credential folders, which the guard cannot enforce, since it does not see the Read tool. Managed settings carry all of them because a session with several repositories reads none of them from a repository. The relative rules are written from the session's folder, so in a session with several repositories the `Edit` rules and `Read(./**/.env)` cover every repository under it.
 - Turn on one edition, not both. A repository that still wires the hooks in its own settings runs the guard twice while the plugin is on; take the hook entries out once the plugin is proven, and keep the config file.
 
 To try the plugin for yourself in Claude Code, without an organization: `/plugin install antaris-guard --marketplace Antaris-Analytics-LLC/Antaris-Guard`.

@@ -193,7 +193,9 @@ Decided, on Jake's answers of 2026-10-19:
   broken still blocks.
 - G16 lets the exact folder name `.claude-plugin` through, and nothing else after `.claude-`.
 - The denies and subagent caps of `settings.example.json` move into the managed settings,
-  written to match any repository under the session's folder.
+  written to match any repository under the session's folder, with the Read denies a
+  repository's settings put on secret files and credential folders (Jake, before merge): the
+  guard does not see the Read tool, so only the settings can keep it off those files.
 - The managed settings pin the marketplace to a tag, and a GitHub tag ruleset lets only Jake
   create or move tags.
 - Repositories take their own hook entries out only after the real plugin's exit test passes.

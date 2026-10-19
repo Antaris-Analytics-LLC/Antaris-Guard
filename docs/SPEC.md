@@ -71,7 +71,9 @@ organization turns one edition on for every session through its server-managed s
 to a tag. That is the only way a hook reaches a cloud session with more than one repository
 attached: such a session reads no hooks, permission rules or env from any repository's
 `.claude/settings.json` (Claude Code's cloud documentation, read 2026-10-19). The same managed
-settings carry the denies and subagent caps of `settings.example.json`. The per-repository install
+settings carry the denies and subagent caps of `settings.example.json`, and the Read denies a
+repository's settings put on secret files and credential folders, which the guard cannot enforce
+since it does not see the Read tool. The per-repository install
 stays, for one-repository sessions and for sessions the managed settings do not reach.
 
 `judge()` is pure: the same command, config and context give the same decision. It never reads
