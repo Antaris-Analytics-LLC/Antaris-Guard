@@ -9,7 +9,8 @@
  * explain prints what the parser saw (the commands with their programs, which are piped, which
  * came out of a shell string, the inline code) and the decision with its rule and reason, reading
  * the config the hook would read: .claude/guard.config.json under CLAUDE_PROJECT_DIR, else the
- * working directory. Exit 0 is allow, exit 2 is deny, as the hook does it; exit 1 is a usage
+ * working directory. Exit 0 is allow or ask, exit 2 is deny, as the hook does it, and the
+ * decision line says which; exit 1 is a usage
  * error. A config the guard cannot read is a deny with G17's reason, as the hook does it.
  * explain judges and prints; it never writes the log.
  *
@@ -97,7 +98,8 @@ function explain(command) {
   if (verdict.decision === "allow") return 0;
   out(`rule: ${verdict.rule} ${verdict.name} (${verdict.tier})`);
   out(`reason: ${verdict.reason}`);
-  return 2;
+  // The hook's exit codes: an ask is exit 0 with the prompt's JSON, a deny is exit 2.
+  return verdict.decision === "ask" ? 0 : 2;
 }
 
 function verifyLog(tip) {

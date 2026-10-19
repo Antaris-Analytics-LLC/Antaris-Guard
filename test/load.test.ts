@@ -63,12 +63,12 @@ describe("guard.js fails closed when it cannot load", () => {
     const r = runGuard(path.join(dir, "guard.js"), PUSH);
     assert.equal(r.code, 2, r.stderr);
     assert.match(r.stderr, LOAD_FAILURE);
-    assert.match(r.stderr, /does not export judge\(\) and blockedLine\(\)/);
+    assert.match(r.stderr, /does not export judge\(\), blockedLine\(\) and askLine\(\)/);
   });
 
   it("a judge() that throws blocks with G17, exit 2 and the third v0.1 reason", () => {
     const dir = copyOfGuard(true);
-    fs.writeFileSync(path.join(dir, "lib", "judge.js"), 'module.exports = { judge: () => { throw new Error("boom while judging"); }, blockedLine: () => "" };\n');
+    fs.writeFileSync(path.join(dir, "lib", "judge.js"), 'module.exports = { judge: () => { throw new Error("boom while judging"); }, blockedLine: () => "", askLine: () => "" };\n');
     const r = runGuard(path.join(dir, "guard.js"), PUSH);
     assert.equal(r.code, 2, r.stderr);
     assert.match(r.stderr, /^guard: blocked \(G17 unreadable: the guard could not judge the command: boom while judging\)/);
@@ -78,7 +78,7 @@ describe("guard.js fails closed when it cannot load", () => {
     // The last net: lib/ loads fine, then something throws where no try can see it, before stdin
     // is read. The uncaughtException handler turns it into a block.
     const dir = copyOfGuard(true);
-    fs.writeFileSync(path.join(dir, "lib", "judge.js"), 'process.nextTick(() => { throw new Error("boom later"); });\nmodule.exports = { judge: () => ({ decision: "allow" }), blockedLine: () => "" };\n');
+    fs.writeFileSync(path.join(dir, "lib", "judge.js"), 'process.nextTick(() => { throw new Error("boom later"); });\nmodule.exports = { judge: () => ({ decision: "allow" }), blockedLine: () => "", askLine: () => "" };\n');
     const r = runGuard(path.join(dir, "guard.js"), PUSH);
     assert.equal(r.code, 2, r.stderr);
     assert.match(r.stderr, LOAD_FAILURE);

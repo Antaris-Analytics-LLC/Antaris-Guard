@@ -44,15 +44,38 @@ export const inventarisProject = (): string => (inventarisDir ??= projectWith(IN
 /** A project holding the built-in defaults as its config file, for the defaults comparison. */
 export const defaultsProject = (): string => (defaultsDir ??= projectWith(DEFAULTS));
 
-export type GuardRun = { allowed: boolean; code: number | null; reason: string; stderr: string };
+/**
+ * What a hook run came to, read the three ways Claude Code reads it: exit 2 is deny; exit 0 with
+ * the ask JSON alone on stdout and nothing on stderr is ask; exit 0 with nothing on stdout or
+ * stderr is allow. Anything else is "neither", which no table accepts: an allowed case must be
+ * truly silent, and an ask cannot pass as an allow.
+ */
+export type Decision = "allow" | "ask" | "deny" | "neither";
+export type GuardRun = { decision: Decision; allowed: boolean; asked: boolean; code: number | null; reason: string; stderr: string; stdout: string };
+
+/** The reason an ask carries, or null when stdout is not exactly the hook's ask JSON. */
+export function askReasonOf(stdout: string): string | null {
+  let o: { hookSpecificOutput?: { hookEventName?: unknown; permissionDecision?: unknown; permissionDecisionReason?: unknown } };
+  try { o = JSON.parse(stdout); } catch { return null; }
+  const h = o?.hookSpecificOutput;
+  if (!h || Object.keys(o).length !== 1 || h.hookEventName !== "PreToolUse" || h.permissionDecision !== "ask" || typeof h.permissionDecisionReason !== "string") return null;
+  return h.permissionDecisionReason;
+}
+
+/** A finished hook process, read as a GuardRun. */
+function readRun(status: number | null, rawStdout: string | null, rawStderr: string | null): GuardRun {
+  const stdout = (rawStdout || "").trim(), stderr = (rawStderr || "").trim();
+  const asked = status === 0 && stderr === "" ? askReasonOf(stdout) : null;
+  const decision: Decision = status === 2 ? "deny" : status === 0 && stdout === "" && stderr === "" ? "allow" : asked !== null ? "ask" : "neither";
+  // The reason inside the parentheses, as the v0.1 harness read it; the id prefix, when there is one, is part of it.
+  const reason = decision === "ask" ? asked!.match(/^guard: ask \(([^)]*)\)/)?.[1] ?? "" : stderr.match(/guard: blocked \(([^)]*)\)/)?.[1] ?? "";
+  return { decision, allowed: decision === "allow", asked: decision === "ask", code: status, reason, stderr, stdout };
+}
 
 /** The Bash guard at `file`, given `input` on stdin as it is, with CLAUDE_PROJECT_DIR pointing at `project`. */
 export function runGuardRaw(file: string, input: string, project: string = inventarisProject()): GuardRun {
   const run = spawnSync(process.execPath, [file], { input, encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: project }, maxBuffer: 64 * 1024 * 1024 });
-  const stderr = (run.stderr || "").trim();
-  // The reason inside the parentheses, as the v0.1 harness read it; the id prefix, when there is one, is part of it.
-  const reason = stderr.match(/guard: blocked \(([^)]*)\)/)?.[1] ?? "";
-  return { allowed: run.status === 0, code: run.status, reason, stderr };
+  return readRun(run.status, run.stdout, run.stderr);
 }
 
 /** A Bash tool call as Claude Code sends it, with the session id the log records. */
@@ -81,8 +104,7 @@ export function runGuardWithCwd(file: string, command: string, cwd: string): Gua
   const env = { ...process.env };
   delete env.CLAUDE_PROJECT_DIR;
   const run = spawnSync(process.execPath, [file], { input: JSON.stringify({ tool_name: "Bash", tool_input: { command }, cwd }), encoding: "utf8", env });
-  const stderr = (run.stderr || "").trim();
-  return { allowed: run.status === 0, code: run.status, reason: stderr.match(/guard: blocked \(([^)]*)\)/)?.[1] ?? "", stderr };
+  return readRun(run.status, run.stdout, run.stderr);
 }
 
 export type ExplainRun = { code: number | null; stdout: string; stderr: string };

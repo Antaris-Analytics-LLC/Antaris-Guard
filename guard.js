@@ -3,8 +3,12 @@
  * Antaris-Guard: the Bash guard. PreToolUse hook for Bash in Claude Code.
  *
  * Reads the tool call from stdin, reads the config file under the project root, hands the command
- * and the config to judge() in lib/judge.js, appends the decision to the log, exits 2 with the
- * rule and reason on stderr to block, exits 0 in silence to allow. The permission rules in
+ * and the config to judge() in lib/judge.js, appends the decision to the log, and answers one of
+ * three ways: exit 2 with the rule and reason on stderr to deny; exit 0 with the hook's JSON on
+ * stdout to ask, so Claude Code shows the operator the command, the rule and the reason and
+ * waits; exit 0 in silence to allow, which leaves the call to Claude Code's own permission
+ * settings. The guard never prints an allow, since a printed allow would skip the permission
+ * prompt for everything the guard does not name. The permission rules in
  * settings.json are prefix matches on the first command; the judge reads the whole line the way
  * a shell would run it, so chained commands, subshells, pipes into interpreters, shell strings,
  * inline code and secret-shaped arguments are caught too.
@@ -19,8 +23,9 @@
  *
  * Every decision is logged, allows included, before it is printed: one line in the log under
  * .claude/guard/ with the command's SHA-256, never its text. A decision the log cannot keep is a
- * block, because a guard that cannot keep its record is not guarding; when the decision was a
- * deny already, the deny line prints and a second line says the log failed.
+ * block, because a guard that cannot keep its record is not guarding; that goes for an ask as for
+ * an allow, since either lets the command run. When the decision was a deny already, the deny line
+ * prints and a second line says the log failed.
  *
  * The config is .claude/guard.config.json under the project root: CLAUDE_PROJECT_DIR when Claude
  * Code sets it, else the cwd field of the tool call, else this process's working directory. No
@@ -34,6 +39,8 @@
  * The stderr line keeps v0.1's shape, with the rule's id and name at the front of the reason:
  *   guard: blocked (G07 push-to-protected: direct push to main; open a PR instead): git push origin main
  *   guard: blocked (G17 unreadable: the guard could not load: Cannot find module '.../lib/judge.js')
+ * and an ask's reason, shown in the permission prompt, has the same shape:
+ *   guard: ask (G21 push-to-branch: a push leaves the machine; confirm it): git push -u origin m1/x
  */
 "use strict";
 
@@ -48,12 +55,13 @@ const couldNotLoad = (err) => block(`the guard could not load: ${message(err)}`)
 process.on("uncaughtException", couldNotLoad);
 process.on("unhandledRejection", couldNotLoad);
 
-let judge, blockedLine, readConfig, projectDir, validate, logPath, appendLog, sha256, homedir;
+let judge, blockedLine, askLine, readConfig, projectDir, validate, logPath, appendLog, sha256, homedir, writeSync;
 try {
   const path = require("node:path");
   homedir = require("node:os").homedir;
-  ({ judge, blockedLine } = require(path.join(__dirname, "lib", "judge.js")));
-  if (typeof judge !== "function" || typeof blockedLine !== "function") throw new Error("lib/judge.js does not export judge() and blockedLine()");
+  ({ writeSync } = require("node:fs"));
+  ({ judge, blockedLine, askLine } = require(path.join(__dirname, "lib", "judge.js")));
+  if (typeof judge !== "function" || typeof blockedLine !== "function" || typeof askLine !== "function") throw new Error("lib/judge.js does not export judge(), blockedLine() and askLine()");
   ({ readConfig, projectDir, validate } = require(path.join(__dirname, "lib", "config.js")));
   if (typeof readConfig !== "function" || typeof projectDir !== "function" || typeof validate !== "function") throw new Error("lib/config.js does not export readConfig(), projectDir() and validate()");
   ({ logPath, append: appendLog, sha256 } = require(path.join(__dirname, "lib", "log.js")));
@@ -102,7 +110,7 @@ process.stdin.on("end", () => {
   } else {
     try {
       verdict = judge(cmd, settings, { home: homedir() });
-      printed = blockedLine(verdict);
+      printed = verdict.decision === "ask" ? askLine(verdict) : blockedLine(verdict);
     } catch (err) {
       verdict = { decision: "deny", rule: "G17", name: "unreadable", reason: `the guard could not judge the command: ${message(err)}` };
       printed = `guard: blocked (${UNREADABLE}: ${verdict.reason}): ${line}`;
@@ -115,12 +123,19 @@ process.stdin.on("end", () => {
     try {
       appendLog(file, { t: new Date().toISOString(), session, tool: "Bash", decision: verdict.decision, rule: verdict.rule, reason: verdict.reason, cmd_sha256: sha256(unreadable ? input : cmd) });
     } catch (err) {
-      if (verdict.decision === "allow") block(`could not write the log: ${message(err)}`, line);
+      // An allow or an ask would let the command run unrecorded, so either is a block.
+      if (verdict.decision !== "deny") block(`could not write the log: ${message(err)}`, line);
       process.stderr.write(`${printed}\nguard: could not write the log (${message(err)})\n`);
       process.exit(2);
     }
   }
 
+  // An ask is exit 0 with the hook's JSON alone on stdout: Claude Code shows the operator the
+  // command and this reason, and waits. Written synchronously so the whole object is out before exit.
+  if (verdict.decision === "ask") {
+    writeSync(1, `${JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "ask", permissionDecisionReason: printed } })}\n`);
+    process.exit(0);
+  }
   if (verdict.decision !== "allow") {
     process.stderr.write(`${printed}\n`);
     process.exit(2);
