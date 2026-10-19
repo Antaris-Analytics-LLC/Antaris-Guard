@@ -16,7 +16,9 @@ with the reason saying what is wrong. Absence is refusal: a file that git can re
 anyone naming it (checking out an older commit) must not quietly loosen the guard.
 
 `inventaris.json` in this folder is the worked example: the values v0.1 had hard-coded, for the
-repository the test table was written for. The table runs under it. Copy it to
+repository the test table was written for. The table runs under it. Its `rules` map turns G21
+off, since Inventaris pushes a branch in every round; leave that line out to have every push to a
+branch asked. Copy it to
 `.claude/guard.config.json` and edit, or write the file from the keys below. Validation is strict:
 `version` is required, unknown keys fail (a `$comment` key included), and every list is a list of
 non-empty strings with no whitespace in them.

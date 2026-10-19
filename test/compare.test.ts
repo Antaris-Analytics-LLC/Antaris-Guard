@@ -2,11 +2,12 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
-import { CURRENT, FROZEN, agentCall, runGuard, runGuardRaw, runSubagent, runSubagentParallel, stripId, tempEnv } from "./harness.ts";
+import { CURRENT, FROZEN, agentCall, defaultsProject, runGuard, runGuardRaw, runSubagent, runSubagentParallel, stripId, tempEnv } from "./harness.ts";
 import * as bash from "./tables/bash.ts";
 import * as g18 from "./tables/g18.ts";
 import * as r2 from "./tables/r2.ts";
 import * as r3 from "./tables/r3.ts";
+import * as r4 from "./tables/r4.ts";
 import * as subagent from "./tables/subagent.ts";
 
 /*
@@ -53,10 +54,9 @@ describe("compare: the v0.1 Bash table through v0.1 and the current guard", () =
   for (const command of bash.ALLOWED) {
     it(`same allow: ${command}`, () => {
       const was = runGuard(FROZEN.guard, command), now = runGuard(CURRENT.guard, command);
-      assert.equal(was.code, 0, `v0.1 blocked: ${was.stderr}`);
-      assert.equal(now.code, 0, `the current guard blocked: ${now.stderr}`);
-      assert.equal(was.stderr, "");
-      assert.equal(now.stderr, "");
+      // An allow is silence: exit 0 with nothing printed, so an ask cannot pass as one.
+      assert.equal(was.decision, "allow", `v0.1 did not allow in silence: ${was.stderr}`);
+      assert.equal(now.decision, "allow", `the current guard did not allow in silence: ${now.stderr}${now.stdout}`);
     });
   }
 
@@ -81,8 +81,8 @@ describe("compare: G18's table, R1's listed difference", () => {
   for (const command of g18.ALLOWED) {
     it(`same allow: ${command}`, () => {
       const was = runGuard(FROZEN.guard, command), now = runGuard(CURRENT.guard, command);
-      assert.equal(was.code, 0, `v0.1 blocked: ${was.stderr}`);
-      assert.equal(now.code, 0, `the current guard blocked: ${now.stderr}`);
+      assert.equal(was.decision, "allow", `v0.1 did not allow in silence: ${was.stderr}`);
+      assert.equal(now.decision, "allow", `the current guard did not allow in silence: ${now.stderr}${now.stdout}`);
     });
   }
 });
@@ -103,7 +103,7 @@ for (const [round, table] of ROUNDS) {
         const before = runGuard(FROZEN.guard, command), now = runGuard(CURRENT.guard, command);
         assert.equal(before.code, 2, `v0.1 allowed this, so it is not a loosening: ${before.stderr}`);
         assert.match(before.reason, was, `v0.1 blocked it for another reason: ${before.stderr}`);
-        assert.equal(now.code, 0, `the current guard still blocks: ${now.stderr}`);
+        assert.equal(now.decision, "allow", `the current guard does not allow it in silence: ${now.stderr}${now.stdout}`);
       });
     }
 
@@ -130,12 +130,41 @@ for (const [round, table] of ROUNDS) {
     for (const command of table.ALLOWED) {
       it(`same allow: ${command.slice(0, 80)}`, () => {
         const was = runGuard(FROZEN.guard, command), now = runGuard(CURRENT.guard, command);
-        assert.equal(was.code, 0, `v0.1 blocked: ${was.stderr.slice(0, 300)}`);
-        assert.equal(now.code, 0, `the current guard blocked: ${now.stderr.slice(0, 300)}`);
+        assert.equal(was.decision, "allow", `v0.1 did not allow in silence: ${was.stderr.slice(0, 300)}`);
+        assert.equal(now.decision, "allow", `the current guard did not allow in silence: ${now.stderr.slice(0, 300)}${now.stdout.slice(0, 300)}`);
       });
     }
   });
 }
+
+// R4's table runs under the built-in defaults, where G21 asks; the frozen v0.1 hook reads no config.
+describe("compare: R4's table under the built-in defaults, R4's listed differences", () => {
+  for (const [command, reason] of r4.ASKED) {
+    it(`new ask in R4: ${command}`, () => {
+      const was = runGuard(FROZEN.guard, command, defaultsProject()), now = runGuard(CURRENT.guard, command, defaultsProject());
+      assert.equal(was.decision, "allow", `v0.1 did not allow this, so it is not a new ask: ${was.stderr}`);
+      assert.equal(now.decision, "ask", `the current guard did not ask: ${now.stderr}${now.stdout}`);
+      assert.match(now.reason, reason);
+    });
+  }
+
+  for (const [command] of r4.BLOCKED) {
+    it(`same block: ${command}`, () => {
+      const was = runGuard(FROZEN.guard, command, defaultsProject()), now = runGuard(CURRENT.guard, command, defaultsProject());
+      assert.equal(was.decision, "deny", `v0.1 did not block: ${was.stderr}`);
+      assert.equal(now.decision, "deny", `the current guard did not block: ${now.stderr}${now.stdout}`);
+      assert.equal(stripId(now.stderr), was.stderr);
+    });
+  }
+
+  for (const command of r4.ALLOWED) {
+    it(`same allow: ${command}`, () => {
+      const was = runGuard(FROZEN.guard, command, defaultsProject()), now = runGuard(CURRENT.guard, command, defaultsProject());
+      assert.equal(was.decision, "allow", `v0.1 did not allow in silence: ${was.stderr}`);
+      assert.equal(now.decision, "allow", `the current guard did not allow in silence: ${now.stderr}${now.stdout}`);
+    });
+  }
+});
 
 describe("compare: the subagent table through v0.1 and the current hook", () => {
   for (const [name, payload, env, exit] of subagent.CASES) {
@@ -163,9 +192,13 @@ describe("compare: the subagent table through v0.1 and the current hook", () => 
 });
 
 describe("compare: the count", () => {
-  it("reports zero differences apart from the listed new blocks, new allows and new reasons", (t) => {
-    let differences = 0, newBlocks = 0, newAllows = 0, newReasons = 0;
-    const same = (command: string) => { const was = runGuard(FROZEN.guard, command), now = runGuard(CURRENT.guard, command); return was.code === now.code && stripId(now.stderr) === was.stderr; };
+  it("reports zero differences apart from the listed new blocks, new allows, new reasons and new asks", (t) => {
+    let differences = 0, newBlocks = 0, newAllows = 0, newReasons = 0, newAsks = 0;
+    // The same answer, of the three, and the same stderr line once the id is stripped.
+    const same = (command: string, project?: string) => {
+      const was = runGuard(FROZEN.guard, command, project), now = runGuard(CURRENT.guard, command, project);
+      return was.decision === now.decision && stripId(now.stderr) === was.stderr && now.stdout === was.stdout;
+    };
     const rounds = ROUNDS.map(([, table]) => table);
     const unchanged = [...bash.BLOCKED.map(([c]) => c), ...bash.ALLOWED, ...g18.ALLOWED, ...rounds.flatMap((r) => [...r.UNCHANGED.map(([c]) => c), ...r.ALLOWED])];
     const blocked = [...g18.BLOCKED, ...rounds.flatMap((r) => r.BLOCKED)];
@@ -174,13 +207,19 @@ describe("compare: the count", () => {
     for (const [command] of blocked) if (!same(command)) newBlocks++;
     for (const [command] of loosened) if (!same(command)) newAllows++;
     for (const [command] of reworded) if (!same(command)) newReasons++;
-    t.diagnostic(`the v0.1 table, G18's allowed side and the rounds' unchanged sides: ${differences} differences across ${unchanged.length} cases`);
+    // R4's table, under the built-in defaults: its blocked and allowed sides are the same, its asked side is new.
+    const r4Same = [...r4.BLOCKED.map(([c]) => c), ...r4.ALLOWED];
+    for (const command of r4Same) if (!same(command, defaultsProject())) differences++;
+    for (const [command] of r4.ASKED) if (!same(command, defaultsProject())) newAsks++;
+    t.diagnostic(`the v0.1 table, G18's allowed side and the rounds' unchanged sides: ${differences} differences across ${unchanged.length + r4Same.length} cases`);
     t.diagnostic(`G18's and the rounds' blocked sides: ${newBlocks} new blocks across ${blocked.length} cases`);
     t.diagnostic(`the rounds' loosened sides: ${newAllows} new allows across ${loosened.length} cases`);
     t.diagnostic(`the rounds' reworded sides: ${newReasons} new reasons across ${reworded.length} cases`);
+    t.diagnostic(`R4's asked side, under the built-in defaults: ${newAsks} new asks across ${r4.ASKED.length} cases`);
     assert.equal(differences, 0);
     assert.equal(newBlocks, blocked.length);
     assert.equal(newAllows, loosened.length);
     assert.equal(newReasons, reworded.length);
+    assert.equal(newAsks, r4.ASKED.length);
   });
 });

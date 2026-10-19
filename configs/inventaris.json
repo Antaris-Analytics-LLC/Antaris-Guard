@@ -7,6 +7,6 @@
   "secretEnv": ["AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "DATABASE_URL", "COGNITO_CLIENT_SECRET", "GITHUB_TOKEN"],
   "credentialPaths": ["~/.aws", "~/.ssh", "~/.config", "~/.netrc", "~/.npmrc"],
   "blockedPrograms": ["sudo", "su", "curl", "wget", "ssh", "scp", "nc", "ncat", "telnet", "dd", "mkfs", "crontab", "eval", "base64", "xxd", "python", "python3", "pip", "pip3"],
-  "rules": {},
+  "rules": { "G21": "off" },
   "log": { "enabled": true, "path": ".claude/guard/log.jsonl" }
 }
