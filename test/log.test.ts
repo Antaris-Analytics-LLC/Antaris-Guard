@@ -215,10 +215,13 @@ describe("the hooks and the log", () => {
     assert.match(new Date(rows[0].t as string).toISOString(), /^\d{4}-\d{2}-\d{2}T/);
   });
 
-  it("a missing config logs nothing, since there is no path to log to", () => {
+  it("a config the guard cannot read logs nothing, since there is no path to log to; a missing one logs where the defaults say (round 4b; it was a block that logged nothing)", () => {
+    const broken = projectWith(null, "nope");
+    assert.equal(runGuard(CURRENT.guard, STATUS, broken).code, 2);
+    assert.ok(!fs.existsSync(path.join(broken, ".claude", "guard")));
     const project = projectWith(null);
-    assert.equal(runGuard(CURRENT.guard, STATUS, project).code, 2);
-    assert.ok(!fs.existsSync(path.join(project, ".claude", "guard")));
+    assert.equal(runGuard(CURRENT.guard, STATUS, project).code, 0);
+    assert.deepEqual(linesOf(logOf(project)).map((row) => [row.tool, row.decision]), [["Bash", "allow"]]);
   });
 
   it("logging off writes nothing and changes no decision", () => {

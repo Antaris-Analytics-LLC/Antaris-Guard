@@ -50,6 +50,8 @@ lib/log.js                the append-only, hash-chained decision log
 lib/scan.js               reading a script file a command runs, and judging its text
 packs/<name>/rules.js     optional rule packs, each with its own test table
 configs/inventaris.json   the worked example config, the one the v0.1 table runs under
+configs/antaris-analytics.json   Antaris Analytics' own config, the fallback its plugin edition names
+.claude-plugin/marketplace.json  the plugin marketplace: two editions of the hooks, from R4b
 bin/antaris-guard.js      explain, test, init, upgrade, check, compare, bench, log, verify-log
 test/                     the v0.1 table (never shrinks) and one file per rule or pack
 bench/corpus/             the evasion corpus and the legitimate set
@@ -58,6 +60,19 @@ bench/versions/           frozen copies of every released guard, v0.1 first, for
 
 The hooks stay single-file-loadable: `guard.js` requires `lib/` relatively, and `init` copies the
 whole set into a repository's `.claude/hooks/antaris-guard/`. No runtime dependency, Node 22+.
+
+From R4b the repository is also a Claude Code plugin marketplace, `antaris-guard`, whose plugin
+root is the repository root. It lists two editions that share every file and differ in one
+argument: `antaris-guard`, whose hooks run `node guard.js` and `node subagent-guard.js`, and
+`antaris-guard-antaris-analytics`, whose hooks add `--fallback antaris-analytics`. Each edition's
+hooks are written inline in its marketplace entry, with `onFailure: block`; there is no
+`plugin.json` and no `hooks/hooks.json`, so neither edition can pick up the other's. An
+organization turns one edition on for every session through its server-managed settings, pinned
+to a tag. That is the only way a hook reaches a cloud session with more than one repository
+attached: such a session reads no hooks, permission rules or env from any repository's
+`.claude/settings.json` (Claude Code's cloud documentation, read 2026-10-19). The same managed
+settings carry the denies and subagent caps of `settings.example.json`. The per-repository install
+stays, for one-repository sessions and for sessions the managed settings do not reach.
 
 `judge()` is pure: the same command, config and context give the same decision. It never reads
 the disk except through `scan`, which is passed in, so tests can hand it a fake file reader.
@@ -95,7 +110,7 @@ Ids never change meaning. A retired rule's id is not reused.
 | G13 | credential-directory | deny | `~/.aws` and the others, config |
 | G14 | push-or-deploy-in-inline-code | deny | |
 | G15 | wide-chmod | deny | |
-| G16 | protected-path | deny | `.claude/`, `CLAUDE.md`, `.mcp.json`, plus config; from R3 judged per command, heredoc bodies included, with comments and the message text of `git commit`, `git tag`, `gh pr` and `gh issue` left out, and one read let through: a reading program or `cp` source reading a file under `~/.claude/uploads` |
+| G16 | protected-path | deny | `.claude/`, `CLAUDE.md`, `.mcp.json`, plus config; from R3 judged per command, heredoc bodies included, with comments and the message text of `git commit`, `git tag`, `gh pr` and `gh issue` left out, and one read let through: a reading program or `cp` source reading a file under `~/.claude/uploads`; from R4b the exact folder name `.claude-plugin`, where a plugin keeps its manifest, is not `.claude`, and every other name after `.claude-` still is |
 | G17 | unreadable | deny | an unclosed quote, a heredoc with no end, shells nested too deep, a rule that threw |
 | G18 | browser-automation | deny | new: playwright, puppeteer, chromium, pw-browsers, headless, selenium, webdriver |
 | G19 | push-to-url-or-unknown-remote | deny | new: `git push https://...`, a remote not in config, `git remote add` or `set-url` |
@@ -117,13 +132,23 @@ purpose: the session's shell cannot name it (G16) and the settings deny the edit
 config has the same standing as the hooks themselves. A config at the project root would be a
 file the session can edit, which is a guard the session can loosen; there is none. The project
 root is `CLAUDE_PROJECT_DIR` when Claude Code sets it, else the `cwd` field of the hook's stdin,
-else the process working directory. No config file blocks every command with `G17`, naming the
-missing file and saying the operator writes it (`antaris-guard init` from R7, `configs/README.md`
-until then): absence is refusal, and a file git can remove without anyone naming it (checking out
-an older commit) must not quietly loosen the guard. The built-in defaults are what `init` writes
-for a new repository and what the defaults comparison in the tests runs on; they never stand in
-for a missing file. Unknown keys fail validation, and a config that fails validation blocks every
-command with `G17` and the validation message.
+else the process working directory.
+
+No config file is not a block from R4b (Jake, 2026-10-19). With the guard turned on for a whole
+organization as a plugin, a session with several repositories starts in a folder above them where
+there is no config, and a repository without one would have every command refused; that is a
+cage, not a guard. A missing file falls back: to `configs/<name>.json` beside `lib/` when the hook
+is started with `--fallback <name>` (a name of lowercase words joined by hyphens, so it can only
+name a file in that folder), else to the built-in defaults. The cost is the one absence-is-refusal
+used to prevent: a file git can remove without anyone naming it (checking out an older commit) now
+loosens the guard to the fallback instead of blocking. For a guard against honest mistakes, Jake
+chose that trade. Until R4b, no file blocked every command with `G17`.
+
+A file that is there but cannot be read or is not JSON, a fallback that cannot be read, and
+arguments the hook does not take still block every command with `G17`. The built-in defaults are
+also what `init` writes for a new repository and what the defaults comparison in the tests runs
+on. Unknown keys fail validation, and a config that fails validation, a fallback included, blocks
+every command with `G17` and the validation message.
 
 ```json
 {
@@ -256,7 +281,7 @@ Packs cannot weaken core rules. A pack rule that throws is `G17` like any other.
 
 | Command | What it does |
 | --- | --- |
-| `explain "<command>"` | Prints the parse (commands, programs, piped, inline code, variables, scanned files) and the decision with its rule. |
+| `explain "<command>"` | Prints the parse (commands, programs, piped, inline code, variables, scanned files) and the decision with its rule. With `--fallback <name>`, a folder with no config is judged by that fallback, as the hook started with the same argument judges it. |
 | `test` | Runs the v0.1 table, every rule's table and every pack's table. |
 | `init` | Copies the hooks and `lib/` into `.claude/hooks/antaris-guard/`, writes a starter `.claude/guard.config.json` if there is none, adds `.claude/guard/` to `.gitignore`, and prints the `settings.json` block to add. An operator's command: it refuses to run without a terminal on stdin, which is how it tells a person from a session, and G24 denies it from a session by name. |
 | `upgrade` | `init` again over an existing install, keeping the config. Same two checks. |

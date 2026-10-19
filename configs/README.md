@@ -9,17 +9,30 @@ the settings deny the editing tools there, so the config has the same standing a
 operator writes it; a session does not. A file at the project root would be one the session could
 edit, which is a guard the session could loosen.
 
-**No file is a block.** Every command is refused with `G17 unreadable: could not read the config:
-<path> is missing; the operator writes it, following configs/README.md`. A file the hook cannot
-read, a file that is not JSON, and a file that fails validation block every command the same way,
-with the reason saying what is wrong. Absence is refusal: a file that git can remove without
-anyone naming it (checking out an older commit) must not quietly loosen the guard.
+**No file falls back** (since round 4b; until then no file was a block). A folder with no
+`.claude/guard.config.json` is judged by a fallback: the config `configs/<name>.json` in this
+folder when the hook is started with `--fallback <name>`, else the built-in defaults in the table
+below. A session with several repositories starts in a folder above them, where there is no file,
+so under the plugin the fallback is what judges it. The cost: a file git removes without anyone
+naming it (checking out an older commit) loosens the guard to the fallback instead of blocking.
+Jake chose that trade for a guard against honest mistakes. A file the hook cannot read, a file
+that is not JSON, and a file that fails validation still block every command, with the reason
+saying what is wrong; so does a fallback name that is not lowercase words joined by hyphens, and a
+fallback file that is not here.
 
 `inventaris.json` in this folder is the worked example: the values v0.1 had hard-coded, for the
 repository the test table was written for. The table runs under it. Copy it to
 `.claude/guard.config.json` and edit, or write the file from the keys below. Validation is strict:
 `version` is required, unknown keys fail (a `$comment` key included), and every list is a list of
 non-empty strings with no whitespace in them.
+
+`antaris-analytics.json` is Antaris Analytics' own config, and a fallback: the plugin edition
+`antaris-guard-antaris-analytics` starts both hooks with `--fallback antaris-analytics`, so it
+judges every folder of that organization's sessions that has no file of its own. It is the
+defaults plus `aws` in `blockedPrograms`; `ANTHROPIC_API_KEY`, `PARSICLAUDE_TOKENS` and
+`COGNITO_CLIENT_SECRET` in `secretEnv`; and `*.env` in `secretPaths`, with `python` and `pip`
+allowed. A fallback is validated like any config file. A file here is read only when a hook names
+it, so a repository's own file always wins over it.
 
 | Key | Read by | Default | What it does |
 | --- | --- | --- | --- |
@@ -45,9 +58,11 @@ own settings already ask about programs, and it fails as an unknown key.
 node bin/antaris-guard.js explain "git status | tail -1"
 ```
 
-prints the config file it read, where the log goes, the commands on the line with their programs,
-the shell strings and inline code it lifted out, and the decision with its rule and reason. It
-reads the config the way the hook does, from `CLAUDE_PROJECT_DIR` or the working directory. Exit 0
+prints the config file it read (or, with none, which fallback judged), where the log goes, the
+commands on the line with their programs, the shell strings and inline code it lifted out, and the
+decision with its rule and reason. It reads the config the way the hook does, from
+`CLAUDE_PROJECT_DIR` or the working directory; `explain --fallback antaris-analytics "<command>"`
+judges a folder with no file the way the organization's edition does. Exit 0
 is allow or ask, exit 2 is deny, the same as the hook, and the decision line says which. `verify-log` and `log` read the same config to find
 the log:
 

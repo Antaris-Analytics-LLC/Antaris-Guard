@@ -91,7 +91,7 @@ describe("antaris-guard explain", () => {
     for (const args of [[], ["explain"], ["explain", "a", "b"], ["judge", "ls"], ["explain", "--fallback"], ["explain", "--fallback", "antaris-analytics"]]) {
       const r = runExplain(args);
       assert.equal(r.code, 1, args.join(" "));
-      assert.match(r.stderr, /^usage: antaris-guard explain "<command>"/);
+      assert.match(r.stderr, /^usage: antaris-guard explain \[--fallback <name>\] "<command>"/);
     }
   });
 });
