@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { CURRENT, FROZEN, agentCall, runGuard, runGuardRaw, runSubagent, runSubagentParallel, stripId, tempEnv } from "./harness.ts";
 import * as bash from "./tables/bash.ts";
+import * as g02 from "./tables/g02.ts";
 import * as g18 from "./tables/g18.ts";
 import * as r2 from "./tables/r2.ts";
 import * as r3 from "./tables/r3.ts";
@@ -15,7 +16,7 @@ import * as subagent from "./tables/subagent.ts";
  * current ones, side by side. The decision must be the same and the stderr line must be the same
  * once the rule id and name are stripped from the current one. The only differences allowed are
  * the ones a round lists as new behavior: in R1, the blocked side of G18's table, where v0.1
- * allows and the current guard denies; in R2, R3 and R4b, the BLOCKED side of the round's table (the
+ * allows and the current guard denies; in R2, R3, R4b and the G02 PR, the BLOCKED side of the table (the
  * same shape), its LOOSENED side, where v0.1 denies and the current guard allows, each row saying
  * why, and its REWORDED side, where both deny for different reasons. Those are asserted as exactly
  * that, not skipped, so a row that stops being a difference (or starts being one for another
@@ -24,7 +25,7 @@ import * as subagent from "./tables/subagent.ts";
  */
 
 type Round = { BLOCKED: [string, RegExp][]; LOOSENED: [string, RegExp, string][]; REWORDED: [string, RegExp, RegExp, string][]; UNCHANGED: [string, RegExp][]; ALLOWED: string[] };
-const ROUNDS: [name: string, table: Round][] = [["R2", r2], ["R3", r3], ["R4b", r4b]];
+const ROUNDS: [name: string, table: Round][] = [["R2", r2], ["R3", r3], ["R4b", r4b], ["G02", g02]];
 
 // SHA-256 of the two files at main fdf0a2e. A frozen copy that drifts fails here before anything else runs.
 const FROZEN_SHA256 = {
