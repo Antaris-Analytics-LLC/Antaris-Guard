@@ -17,10 +17,12 @@ Built by Jake Stanier, Antaris Analytics LLC. MIT.
 ## Rules for every session
 
 - Work on a branch and open a pull request. Never push to `main`.
-- Plan before you build. When a task leaves a choice open about how the guard behaves, what a
-  rule covers, what a decision means, or how config or the log are shaped, list the choices as
-  questions in your reply and stop. Build after Jake answers. Purely internal choices (file
-  layout, test structure, names inside code) are yours; say what you picked in the PR.
+- - Plan before you build, but ask only when it matters. Ask me, and stop, when a choice
+  is hard to undo or touches what the server stores, who can see it, money or security.
+  Everything else, housekeeping, file layout, names, defaults and the small behavioral
+  calls that come up mid-build: take the option you would recommend and list it under
+  "Calls made" in the PR, where I can change it at review. A question that could have
+  been a "Calls made" line is a question too many.
 - The guard fails closed. Every new path through the parser or a rule either reaches a decision
   or blocks. A throw is a block. A config the guard cannot read blocks everything. No change may
   turn a block into an allow without a test that says why.
