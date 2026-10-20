@@ -47,7 +47,7 @@ Built by Jake Stanier, Antaris Analytics LLC. MIT.
 The guard's job is to let through what it understands, and nothing else.
 
 - Judge commands, not lines. The shell's own grammar decides what a command is.
-- Absence is refusal. A missing config, an unreadable file, a rule that throws: blocked.
+- Unreadable is refusal. A config that can't be read or isn't valid, a fallback that can't be read, a rule that throws: blocked. A missing config is judged by the defaults, or by the organization's config under its edition.
 - Three answers, never two: allow, ask, deny. The operator decides the middle.
 - The agent cannot edit its own record. The log is append-only and hash-chained, and it lives
   where the session's shell cannot reach it.
