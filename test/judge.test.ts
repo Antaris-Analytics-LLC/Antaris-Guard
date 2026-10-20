@@ -143,6 +143,19 @@ describe("the rules", () => {
     }
   });
 
+  it("carry an ask wording where the deny reason tells a session what to do: G03, aws-cdk-01, G14, aws-cdk-02 and G18 (the G02 PR)", () => {
+    const worded = RULES.filter((rule: { askReason?: unknown }) => rule.askReason !== undefined);
+    assert.deepEqual(worded.map((rule: { id: string }) => rule.id), ["G03", "aws-cdk-01", "G14", "aws-cdk-02", "G18"]);
+    for (const rule of worded) {
+      assert.equal(typeof rule.askReason, "string", rule.id);
+      assert.ok(rule.askReason.length > 0 && !/say what was blocked|sessions run|from a session/.test(rule.askReason), `${rule.id}: ${rule.askReason}`);
+    }
+    // G18's wording depends on what it found, so its test hands both back.
+    const asked = judge("npx playwright test", { ...CONFIG, rules: { G18: "ask" } });
+    assert.deepEqual([asked.decision, asked.rule, asked.reason], ["ask", "G18", "playwright run through npx"]);
+    assert.equal(judge("npx playwright test", CONFIG).reason, "browser automation is off in this repo: playwright run through npx; say what was blocked and stop");
+  });
+
   it("have ids that are unique, G17 included", () => {
     const ids = ALL.map((r: { id: string }) => r.id);
     assert.equal(new Set(ids).size, ids.length);
@@ -184,7 +197,7 @@ describe("the rules", () => {
   it("print no em dashes", () => {
     const emDash = String.fromCharCode(0x2014);
     for (const rule of ALL) {
-      for (const text of [rule.reason, ...(rule.reasons || [])]) assert.ok(!text.includes(emDash), `${rule.id}: ${text}`);
+      for (const text of [rule.reason, ...(rule.reasons || []), ...(rule.askReason ? [rule.askReason] : [])]) assert.ok(!text.includes(emDash), `${rule.id}: ${text}`);
     }
     for (const text of [judge("cat secrets/x", { version: 1, protectedPaths: ["secrets/"], operator: "Ann" }).reason, judge("ls").reason, judge("ls", { version: 1, rules: { G01: "ask" } }).reason]) {
       assert.ok(!text.includes(emDash), text);
@@ -208,6 +221,26 @@ describe("parse()", () => {
     assert.deepEqual(parse.readPathsOf(["grep", "-f", ".env", "packages"]).paths, [".env", "packages"]);
     assert.deepEqual(parse.readPathsOf(["cat", "a", "b"]).paths, ["a", "b"]);
     assert.equal(parse.readPathsOf(["ls", "a"]), null);
+  });
+
+  it("judgedOf() leaves out message text and the message heredoc's body, unless the shell runs part of it (the G02 PR)", () => {
+    const first = (src: string) => parse.parse(src).commands[0];
+    const D = "$" + "(", T = String.fromCharCode(96);
+    assert.deepEqual(parse.judgedOf(first("git commit -m 'drop it' -- a")), { words: ["git", "commit", "-m", "--", "a"], texts: [] });
+    assert.deepEqual(parse.judgedOf(first("gh pr create --title t --body b")).words, ["gh", "pr", "create", "--title", "--body"]);
+    // A $( or a backtick in a message word is read: the shell runs it.
+    assert.deepEqual(parse.judgedOf(first(`git commit -m "${D}date)"`)).words, ["git", "commit", "-m", `${D}date)`]);
+    assert.deepEqual(parse.judgedOf(first(`git commit -m 'see ${T}x${T}'`)).words, ["git", "commit", "-m", `see ${T}x${T}`]);
+    // The heredoc that is the message: its delimiter is read, its body only when it is unquoted and holds a $( or a backtick.
+    assert.deepEqual(parse.judgedOf(first("git commit -F - <<'EOF'\nsee $(x)\nEOF")).texts, ["EOF"]);
+    assert.deepEqual(parse.judgedOf(first("git commit -F - <<EOF\nplain\nEOF")).texts, ["EOF"]);
+    assert.deepEqual(parse.judgedOf(first(`git commit -F - <<EOF\nsee ${D}x)\nEOF`)).texts, ["EOF", `see ${D}x)`]);
+    // A heredoc into anything else, or one of two, is read whole.
+    assert.deepEqual(parse.judgedOf(first("cat <<'EOF'\nbody\nEOF")).texts, ["EOF", "body"]);
+    assert.deepEqual(parse.judgedOf(first("git commit -F - <<A <<B\na\nA\nb\nB")).texts, ["A", "a", "B", "b"]);
+    // messageOf() is the one definition G16 reads too.
+    assert.deepEqual([...parse.messageOf(["git", "commit", "-am", "x"]).skip], [3]);
+    assert.deepEqual(parse.messageOf(["gh", "pr", "create", "--body-file", "-"]), { skip: new Set(), stdin: true });
   });
 
   it("throws on what the shell could not run", () => {

@@ -302,6 +302,24 @@ describe("the rules that read config", () => {
     assert.equal(judge("ls ~/.config", { version: 1, credentialPaths: [] }).decision, "allow");
   });
 
+  it("G13 matches a ~/ entry however home is written, and any other entry as it is written (the G02 PR)", () => {
+    const custom = { version: 1, credentialPaths: ["~/.gitconfig", "/etc/vault"] };
+    for (const command of ["cat $HOME/.gitconfig", "cat ${HOME}/.gitconfig", "cat ~ann/.gitconfig", "cat ~/.git'config'"]) assert.equal(judge(command, custom).rule, "G13", command);
+    // The home folder spelled out is known from context.home, which the hooks pass; without it, that form is not recognized.
+    assert.equal(judge("cat /home/ann/.gitconfig", custom, { home: "/home/ann" }).rule, "G13");
+    assert.equal(judge("cat /home/ann/.gitconfig", custom, { home: "/home/ann/" }).rule, "G13");
+    assert.equal(judge("cat /home/ann/.gitconfig", custom).decision, "allow");
+    assert.equal(judge("cat /home/bob/.gitconfig", custom, { home: "/home/ann" }).decision, "allow");
+    // An entry that does not start with ~/ is matched as it is written, as a prefix.
+    assert.equal(judge("ls /etc/vault/keys", custom).rule, "G13");
+    assert.equal(judge("ls ~/etc/vault", custom).rule, "G13");
+    assert.equal(judge("ls /etc/vaults-of-old", custom).rule, "G13");
+    assert.equal(judge("ls /etc/other", custom).decision, "allow");
+    // A message is not judged; the same words on another command are.
+    assert.equal(judge("git commit -m 'see ~/.gitconfig'", custom).decision, "allow");
+    assert.equal(judge("echo 'see ~/.gitconfig'", custom).rule, "G13");
+  });
+
   it("G16 keeps the three built-in names whatever the list says, adds the config's names, and names the operator", () => {
     const empty = { version: 1, protectedPaths: [] };
     assert.equal(judge(`cat ${DOT_CLAUDE}/settings.json`, empty).rule, "G16");

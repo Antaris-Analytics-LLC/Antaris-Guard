@@ -73,6 +73,23 @@ export const SHAPES: Record<string, (n: number) => string> = {
   "a heredoc of many lines": (n) => fill(n, "x\n", "cat <<EOF\n", "EOF"),
   "many heredocs": (n) => { const k = Math.floor((n - 5) / 6); return `cat ${"<<a ".repeat(k)}\n${"a\n".repeat(k)}`; },
   "three shells deep, a long string": (n) => { const inner = "a ".repeat(Math.floor((n - 60) / 2)); return `bash -c "bash -c \\"bash -c \\\\\\"${inner}\\\\\\"\\""`; },
+  // The G02 PR: G02 and G13 judge each command's words, its heredocs and its message text.
+  "rm repeated": (n) => fill(n, "rm "),
+  "rm -a repeated": (n) => fill(n, "rm -a "),
+  "rm then many -x": (n) => fill(n, "-x ", "rm "),
+  "git rm then many -x": (n) => fill(n, "-x ", "git rm "),
+  "git -C x repeated, then rm": (n) => fill(n, "-C x ", "git ", "rm"),
+  "find then -exec rm repeated": (n) => fill(n, "-exec rm ", "find . "),
+  "find then -exec git repeated": (n) => fill(n, "-exec git ", "find . "),
+  "find then -exec git -c repeated": (n) => fill(n, "-exec git -c ", "find . "),
+  "git commit then -m x repeated": (n) => fill(n, "-m x ", "git commit "),
+  "a heredoc of rm -a lines": (n) => fill(n, "rm -a\n", "cat <<EOF\n", "EOF"),
+  "a heredoc: rm, then a long run of spaces": (n) => fill(n, " ", "cat <<EOF\nrm", "\nEOF"),
+  "~ repeated": (n) => fill(n, "~"),
+  "~a repeated": (n) => fill(n, "~a"),
+  "~ then one long name": (n) => fill(n, "a", "cat ~"),
+  "$HOME repeated": (n) => fill(n, "$HOME"),
+  "~/. repeated": (n) => fill(n, "~/."),
 };
 
 describe("judge() at the length cap", () => {

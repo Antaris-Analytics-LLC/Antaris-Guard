@@ -5,15 +5,17 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { CURRENT, INVENTARIS, ROOT, agentCall, logOf, projectWith, runGuard, runGuardParallel, runGuardRaw, runSubagent, tempEnv } from "./harness.ts";
+import { CURRENT, INVENTARIS, ROOT, agentCall, bashCall, logOf, projectWith, runGuard, runGuardParallel, runGuardRaw, runSubagent, tempEnv } from "./harness.ts";
 import { SETTINGS } from "./tables/subagent.ts";
 
 /*
  * The decision log: lib/log.js as a library (the chain, what verify() finds), the hooks writing
  * it (every decision, allows included, the command's hash and never its text, a log that cannot
  * be written blocking, logging off, the subagent hook in the same chain), many hook processes
- * appending at once, the lock's recovery, the verify-log and log commands, and the .gitignore
- * line that keeps the log out of the repository.
+ * appending at once, the lock's recovery, the verify-log and log commands, the .gitignore line that
+ * keeps the log out of this repository, and (since the G02 PR) the .gitignore the log writes into
+ * its own folder so it stays out of any repository. No git runs here: the PR reports the check of
+ * that .gitignore in a real git repository, done by hand.
  */
 const require = createRequire(import.meta.url);
 const log = require(path.join(ROOT, "lib", "log.js"));
@@ -389,6 +391,168 @@ describe("the hooks and the log", () => {
   it(".gitignore keeps the log out of the repository", () => {
     const lines = fs.readFileSync(path.join(ROOT, ".gitignore"), "utf8").split("\n");
     assert.ok(lines.includes(`${DOT_CLAUDE}/guard/`), ".gitignore does not list the guard folder");
+  });
+});
+
+describe("the log's folder keeps itself out of git (the G02 PR)", () => {
+  const ignoreOf = (project: string): string => path.join(path.dirname(logOf(project)), ".gitignore");
+  const EXPECTED = "# Written by Antaris-Guard. It keeps the guard's own files here out of git: the decision log, its lock and this file.\n/log.jsonl\n/log.jsonl.lock\n/.gitignore\n";
+  /** Runs fn with fs[name] replaced, then puts it back. lib/log.js reads fs's functions when it calls them, so it sees the stand-in. */
+  function swapped<T>(name: "openSync" | "writeFileSync", stand: (...args: unknown[]) => unknown, fn: () => T): T {
+    const fsAny = fs as unknown as Record<string, unknown>;
+    const original = fsAny[name];
+    fsAny[name] = stand;
+    try { return fn(); } finally { fsAny[name] = original; }
+  }
+
+  it("a fresh project gets a .gitignore naming the log, its lock and itself, anchored to the folder, and nothing else", () => {
+    const project = freshProject();
+    assert.equal(runGuard(CURRENT.guard, STATUS, project).code, 0);
+    assert.equal(fs.readFileSync(ignoreOf(project), "utf8"), EXPECTED);
+    assert.equal(log.gitignoreText("log.jsonl"), EXPECTED);
+    assert.deepEqual(fs.readdirSync(path.dirname(logOf(project))).sort(), [".gitignore", "log.jsonl"]);
+  });
+
+  it("an existing folder with a log and no .gitignore gets one on the next write, and the chain goes on", () => {
+    const project = freshProject();
+    runGuard(CURRENT.guard, STATUS, project);
+    fs.unlinkSync(ignoreOf(project));
+    assert.equal(runGuard(CURRENT.guard, PUSH, project).code, 2);
+    assert.equal(fs.readFileSync(ignoreOf(project), "utf8"), EXPECTED);
+    assert.equal(log.verify(logOf(project)).lines, 2);
+    assert.equal(log.verify(logOf(project)).ok, true);
+    // A folder made before the guard ever wrote there, empty: the same.
+    const empty = freshProject();
+    fs.mkdirSync(path.dirname(logOf(empty)), { recursive: true });
+    assert.equal(runGuard(CURRENT.guard, STATUS, empty).code, 0);
+    assert.equal(fs.readFileSync(ignoreOf(empty), "utf8"), EXPECTED);
+  });
+
+  it("a .gitignore that is there is left exactly as it is, byte for byte, with nothing added", () => {
+    const project = freshProject();
+    fs.mkdirSync(path.dirname(logOf(project)), { recursive: true });
+    const mine = Buffer.from("*.tmp\n# the operator's own\nno newline at the end");
+    fs.writeFileSync(ignoreOf(project), mine);
+    const before = fs.statSync(ignoreOf(project));
+    for (const command of [STATUS, PUSH, STATUS]) runGuard(CURRENT.guard, command, project);
+    assert.ok(fs.readFileSync(ignoreOf(project)).equals(mine));
+    assert.equal(fs.statSync(ignoreOf(project)).mtimeMs, before.mtimeMs);
+    assert.equal(fs.statSync(ignoreOf(project)).ino, before.ino);
+    assert.equal(linesOf(logOf(project)).length, 3);
+  });
+
+  it("a .gitignore that is a folder or a link is left as it is, and a dangling link is never followed", () => {
+    const folder = freshProject();
+    fs.mkdirSync(ignoreOf(folder), { recursive: true });
+    assert.equal(runGuard(CURRENT.guard, STATUS, folder).code, 0);
+    assert.ok(fs.statSync(ignoreOf(folder)).isDirectory());
+    assert.deepEqual(fs.readdirSync(ignoreOf(folder)), []);
+
+    const dangling = freshProject();
+    const nowhere = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "antaris-guard-nowhere-")), "target");
+    fs.mkdirSync(path.dirname(logOf(dangling)), { recursive: true });
+    fs.symlinkSync(nowhere, ignoreOf(dangling));
+    assert.equal(runGuard(CURRENT.guard, STATUS, dangling).code, 0);
+    assert.equal(fs.readlinkSync(ignoreOf(dangling)), nowhere);
+    assert.ok(!fs.existsSync(nowhere), "the guard wrote through a link");
+
+    const linked = freshProject();
+    const target = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "antaris-guard-target-")), "ignore");
+    fs.writeFileSync(target, "theirs\n");
+    fs.mkdirSync(path.dirname(logOf(linked)), { recursive: true });
+    fs.symlinkSync(target, ignoreOf(linked));
+    assert.equal(runGuard(CURRENT.guard, STATUS, linked).code, 0);
+    assert.equal(fs.readFileSync(target, "utf8"), "theirs\n");
+  });
+
+  it("a .gitignore the guard cannot create is a G17 block through the hook, and nothing is logged", () => {
+    const project = freshProject();
+    const preload = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "antaris-guard-preload-")), "refuse.cjs");
+    // Stands in for a folder that refuses new files, which root's permissions cannot show: creating a .gitignore fails with EACCES.
+    fs.writeFileSync(preload, [
+      'const fs = require("node:fs");',
+      "const open = fs.openSync;",
+      'fs.openSync = function (p, flags, ...rest) { if (String(p).endsWith(".gitignore") && flags === "wx") { const e = new Error(`EACCES: permission denied, open \'${p}\'`); e.code = "EACCES"; throw e; } return open.call(this, p, flags, ...rest); };',
+    ].join("\n"));
+    const run = spawnSync(process.execPath, ["--require", preload, CURRENT.guard], { input: bashCall(STATUS), encoding: "utf8", env: { ...process.env, CLAUDE_PROJECT_DIR: project } });
+    assert.equal(run.status, 2);
+    assert.match(run.stderr.trim(), /^guard: blocked \(G17 unreadable: could not write the log: .*log\.jsonl: EACCES: permission denied, open '.*\.gitignore'\): git status --short$/);
+    assert.ok(!fs.existsSync(logOf(project)), "a decision was logged although the .gitignore could not be made");
+    assert.ok(!fs.existsSync(ignoreOf(project)));
+  });
+
+  it("the library: a .gitignore it cannot create throws, and one it created but could not write into is removed", () => {
+    const file = logOf(projectWith(null));
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const refuse = () => { throw Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" }); };
+    assert.throws(() => swapped("openSync", refuse, () => log.append(file, entry())), /EACCES/);
+    assert.ok(!fs.existsSync(file));
+    const full = () => { throw Object.assign(new Error("ENOSPC: no space left on device, write"), { code: "ENOSPC" }); };
+    assert.throws(() => swapped("writeFileSync", full, () => log.append(file, entry())), /ENOSPC/);
+    assert.ok(!fs.existsSync(path.join(path.dirname(file), ".gitignore")), "an empty .gitignore was left behind");
+    assert.ok(!fs.existsSync(file));
+    // The next write, with nothing failing, makes it whole.
+    log.append(file, entry());
+    assert.equal(fs.readFileSync(path.join(path.dirname(file), ".gitignore"), "utf8"), EXPECTED);
+    assert.equal(linesOf(file).length, 1);
+  });
+
+  it("the library: a .gitignore replaced by someone else before the failed write is cleaned up stays", () => {
+    const file = logOf(projectWith(null));
+    const ignore = path.join(path.dirname(file), ".gitignore");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const replaceThenFail = () => {
+      fs.unlinkSync(ignore);
+      const fd = fs.openSync(ignore, "w");
+      fs.writeSync(fd, "someone else's\n");
+      fs.closeSync(fd);
+      throw Object.assign(new Error("EIO: i/o error, write"), { code: "EIO" });
+    };
+    assert.throws(() => swapped("writeFileSync", replaceThenFail, () => log.keepOutOfGit(file)), /EIO/);
+    assert.equal(fs.readFileSync(ignore, "utf8"), "someone else's\n");
+  });
+
+  it("returns whether it made the file, and never makes a second one", () => {
+    const file = logOf(projectWith(null));
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    assert.equal(log.keepOutOfGit(file), true);
+    assert.equal(log.keepOutOfGit(file), false);
+    assert.equal(fs.readFileSync(path.join(path.dirname(file), ".gitignore"), "utf8"), EXPECTED);
+  });
+
+  it("names the log by its own file name, in a protected folder of the config's too", () => {
+    const project = projectWith({ ...INVENTARIS, protectedPaths: [".claude/", "CLAUDE.md", ".mcp.json", "secrets/"], log: { enabled: true, path: "secrets/guard.jsonl" } });
+    assert.equal(runGuard(CURRENT.guard, STATUS, project).code, 0);
+    assert.equal(fs.readFileSync(path.join(project, "secrets", ".gitignore"), "utf8"), log.gitignoreText("guard.jsonl"));
+    assert.match(log.gitignoreText("guard.jsonl"), /\n\/guard\.jsonl\n\/guard\.jsonl\.lock\n\/\.gitignore\n$/);
+  });
+
+  it("escapes what git reads as a pattern or trims, and matches a line break in a name with ?", () => {
+    assert.equal(log.ignoreLine("log.jsonl"), "/log.jsonl");
+    assert.equal(log.ignoreLine("a*b [x].jsonl"), "/a\\*b\\ \\[x].jsonl");
+    assert.equal(log.ignoreLine("what?.jsonl"), "/what\\?.jsonl");
+    assert.equal(log.ignoreLine("back\\slash.jsonl"), "/back\\\\slash.jsonl");
+    assert.equal(log.ignoreLine("trailing "), "/trailing\\ ");
+    assert.equal(log.ignoreLine("#hash!.jsonl"), "/#hash!.jsonl");
+    assert.equal(log.ignoreLine("line\nbreak\r.jsonl"), "/line?break?.jsonl");
+  });
+
+  it("the subagent hook writes it too, and many hooks at once make exactly one, whole", async () => {
+    const project = freshProject();
+    assert.equal(runSubagent(CURRENT.subagent, agentCall({ model: "sonnet" }), tempEnv(SETTINGS, project)).code, 0);
+    assert.equal(fs.readFileSync(ignoreOf(project), "utf8"), EXPECTED);
+    const racing = freshProject();
+    const runs = await runGuardParallel(CURRENT.guard, Array.from({ length: 32 }, () => STATUS), racing);
+    assert.deepEqual(runs.map((r) => r.code), Array(32).fill(0), runs.filter((r) => r.code !== 0).map((r) => r.stderr).join("\n"));
+    assert.equal(fs.readFileSync(ignoreOf(racing), "utf8"), EXPECTED);
+    assert.equal(linesOf(logOf(racing)).length, 32);
+  });
+
+  it("logging off writes no .gitignore, as it writes no folder", () => {
+    const project = projectWith({ ...INVENTARIS, log: { enabled: false } });
+    assert.equal(runGuard(CURRENT.guard, STATUS, project).code, 0);
+    assert.ok(!fs.existsSync(ignoreOf(project)));
+    assert.ok(!fs.existsSync(path.dirname(logOf(project))));
   });
 });
 

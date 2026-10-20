@@ -20,7 +20,10 @@ Every rule has a default tier, and since R4 every default tier is `deny`. Config
 between `ask` and `deny`, or turn an optional rule off. A rule cannot be moved to `allow`; turning
 it off is the only way to stop it, and a rule turned off has no effect at all, logged or
 otherwise: the operator turned it off on purpose. A deny wins over an ask on the same line,
-whichever rule comes first.
+whichever rule comes first. A rule whose deny reason tells the session what to do carries a second
+wording, used when it answers ask, since the operator answers an ask (since the G02 pull request):
+G03, G14, aws-cdk-01, aws-cdk-02, and G18, whose ask names what it found. Its deny reason does not
+change.
 
 How each answer reaches Claude Code:
 
@@ -98,7 +101,7 @@ Ids never change meaning. A retired rule's id is not reused.
 | Id | Name | Tier | From v0.1 |
 | --- | --- | --- | --- |
 | G01 | blocked-program | deny | the blocked programs list, now in config |
-| G02 | recursive-delete | deny | `rm -r` |
+| G02 | recursive-delete | deny | `rm -r`; from the G02 pull request judged per command as G16 is (words with quotes removed, shell strings, heredocs; comments and the message text G16 skips left out unless the message holds `$(` or a backtick): where `rm` is the program, `git`'s subcommand or what `find -exec`, `-execdir`, `-ok` or `-okdir` runs, any option before `--` that asks for a recursive delete, wherever it sits (`-r`, `-R`, a cluster holding one, `--recursive` or any abbreviation); elsewhere v0.1's pattern widened to `-R` and the abbreviations |
 | G03 | delete-in-inline-code | deny | delete calls inside `node -e` and the like |
 | G04 | find-or-xargs-delete | deny | `find -delete`, `find -exec rm`, `xargs rm` |
 | G05 | remove-item-recurse | deny | PowerShell |
@@ -109,7 +112,7 @@ Ids never change meaning. A retired rule's id is not reused.
 | G10 | command-substitution | deny | `$(...)` and backticks |
 | G11 | pipe-into-interpreter | deny | |
 | G12 | reads-secret-file | deny | the path patterns are config |
-| G13 | credential-directory | deny | `~/.aws` and the others, config |
+| G13 | credential-directory | deny | `~/.aws` and the others, config; from the G02 pull request judged per command as G02 is, and a `~/` entry matched however home is written (`$HOME/`, `${HOME}/`, the home folder spelled out, `~user/`) |
 | G14 | push-or-deploy-in-inline-code | deny | |
 | G15 | wide-chmod | deny | |
 | G16 | protected-path | deny | `.claude/`, `CLAUDE.md`, `.mcp.json`, plus config; from R3 judged per command, heredoc bodies included, with comments and the message text of `git commit`, `git tag`, `gh pr` and `gh issue` left out, and one read let through: a reading program or `cp` source reading a file under `~/.claude/uploads`; from R4b the exact folder name `.claude-plugin`, where a plugin keeps its manifest, is not `.claude`, and every other name after `.claude-` still is |
@@ -223,8 +226,13 @@ the path. A tip the operator keeps where no session can write (the pull request 
 full rewrite visible to a later `verify-log --tip`.
 
 A log the hook cannot write is itself a block (`G17`), because a guard that cannot keep its
-record is not guarding. `init` adds `.claude/guard/` to the repository's `.gitignore`, and
-`check` confirms the line is there, so a `git add -A` never stages the log.
+record is not guarding. The log keeps itself out of git (from the G02 pull request): on every
+write, when the log's folder has no `.gitignore`, the hook creates one with the `wx` flag naming
+only what the guard writes there, the log, its `.lock` and the `.gitignore` itself, each anchored
+to the folder, so a `git add -A` never stages the log in a repository whose own `.gitignore` says
+nothing about it. One that is there, a file, a folder or a link, is left exactly as it is. One the
+hook cannot create is a `G17` block, as an unwritable log is; one it created but could not write
+into is removed while it is still that file, so an empty one never stays.
 
 Subagent decisions log the same way, with `tool` of `Agent` and `model`, the model asked for,
 after `tool`; the two hooks write one chain.
@@ -285,9 +293,9 @@ Packs cannot weaken core rules. A pack rule that throws is `G17` like any other.
 | --- | --- |
 | `explain "<command>"` | Prints the parse (commands, programs, piped, inline code, variables, scanned files) and the decision with its rule. With `--fallback <name>`, a folder with no config is judged by that fallback, as the hook started with the same argument judges it. |
 | `test` | Runs the v0.1 table, every rule's table and every pack's table. |
-| `init` | Copies the hooks and `lib/` into `.claude/hooks/antaris-guard/`, writes a starter `.claude/guard.config.json` if there is none, adds `.claude/guard/` to `.gitignore`, and prints the `settings.json` block to add. An operator's command: it refuses to run without a terminal on stdin, which is how it tells a person from a session, and G24 denies it from a session by name. |
+| `init` | Copies the hooks and `lib/` into `.claude/hooks/antaris-guard/`, writes a starter `.claude/guard.config.json` if there is none, and prints the `settings.json` block to add. The log keeps itself out of git, so `init` adds no `.gitignore` line (from the G02 pull request). An operator's command: it refuses to run without a terminal on stdin, which is how it tells a person from a session, and G24 denies it from a session by name. |
 | `upgrade` | `init` again over an existing install, keeping the config. Same two checks. |
-| `check` | Compares a repository's installed copy to the package at the version in its lockfile, and the `.gitignore` line, and fails CI when they differ. This replaces a copy-by-hand mirror and its test. |
+| `check` | Compares a repository's installed copy to the package at the version in its lockfile, and fails CI when they differ. This replaces a copy-by-hand mirror and its test. |
 | `compare <old-guard.js>` | Replays the whole table against an older guard and lists every case where the decision or the reason differs: the tool that found the nineteen. |
 | `bench [guard.js]` | Scores a guard against the evasion corpus, by category. |
 | `log`, `verify-log` | Summarize the decision log; verify the chain. |

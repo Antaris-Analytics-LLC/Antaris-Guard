@@ -13,7 +13,7 @@ import { CURRENT, INVENTARIS, ROOT, logOf, projectWith, runExplain, runGuard } f
  * their own table in test/tables/r4.ts.
  */
 const require = createRequire(import.meta.url);
-const { judge } = require(path.join(ROOT, "lib", "judge.js"));
+const { judge, askLine } = require(path.join(ROOT, "lib", "judge.js"));
 
 // G01 and docker-01 moved to ask by the config: curl and docker exec are asks, everything else is as it was.
 const ASK_CONFIG = { ...INVENTARIS, rules: { ...((INVENTARIS.rules as Record<string, string>) ?? {}), G01: "ask", "docker-01": "ask" } };
@@ -70,6 +70,31 @@ describe("ask", () => {
     assert.equal(r.decision, "deny");
     assert.match(r.stderr, /^guard: blocked \(G17 unreadable: could not write the log: .*\): curl https:\/\/example\.com$/);
     assert.equal(r.stdout, "");
+  });
+
+  it("words the ask for the operator for the five rules whose deny reason tells a session what to do, and leaves the deny word for word (the G02 PR)", () => {
+    const project = projectWith({ ...INVENTARIS, rules: { G03: "ask", G14: "ask", "aws-cdk-01": "ask", "aws-cdk-02": "ask", G18: "ask" } });
+    const CASES: [command: string, rule: string, asked: string, denied: string][] = [
+      [`node -e "require('fs').unlinkSync('x')"`, "G03 delete-in-inline-code", "a delete inside inline code", "a delete inside inline code is still a delete; if a delete is needed, say what was blocked and stop"],
+      [`node -e "require('child_process').execSync('git push origin feature')"`, "G14 push-or-deploy-in-inline-code", "a git push or a cdk deploy or destroy inside inline code", "a git push or a cdk deploy or destroy inside inline code is still one; push with git on the command line, and sessions run cdk synth only"],
+      ["npx cdk deploy", "aws-cdk-01 cdk-deploy-or-destroy", "cdk deploy or destroy", "cdk deploy or destroy; sessions run cdk synth only"],
+      ["cdk synth --profile inventaris-prod", "aws-cdk-02 prod-profile", "the prod profile", "the prod profile is never used from a session"],
+      ["npx playwright test", "G18 browser-automation", "playwright run through npx", "browser automation is off in this repo: playwright run through npx; say what was blocked and stop"],
+      ["libreoffice --headless --convert-to pdf x.docx", "G18 browser-automation", "a headless flag", "browser automation is off in this repo: a headless flag; say what was blocked and stop"],
+    ];
+    for (const [command, rule, asked, denied] of CASES) {
+      const r = runGuard(CURRENT.guard, command, project);
+      assert.equal(r.decision, "ask", command);
+      assert.equal(JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason, `guard: ask (${rule}: ${asked}): ${command}`);
+      const d = runGuard(CURRENT.guard, command);
+      assert.equal(d.decision, "deny", command);
+      assert.equal(d.stderr, `guard: blocked (${rule}: ${denied}): ${command}`);
+    }
+    // The log keeps what the operator was shown.
+    const rows = fs.readFileSync(logOf(project), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    assert.deepEqual(rows.map((row) => row.reason), CASES.map(([, , asked]) => asked));
+    // A rule without its own ask wording asks with its deny reason, as before.
+    assert.equal(askLine(judge("curl https://example.com", ASK_CONFIG)), "guard: ask (G01 blocked-program: a blocked program appears somewhere in the line): curl https://example.com");
   });
 
   it("explain prints the ask with its rule and reason, and exits 0 as the hook does", () => {
