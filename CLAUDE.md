@@ -17,7 +17,7 @@ Built by Jake Stanier, Antaris Analytics LLC. MIT.
 ## Rules for every session
 
 - Work on a branch and open a pull request. Never push to `main`.
-- - Plan before you build, but ask only when it matters. Ask me, and stop, when a choice
+- Plan before you build, but ask only when it matters. Ask me, and stop, when a choice
   is hard to undo or touches what the server stores, who can see it, money or security.
   Everything else, housekeeping, file layout, names, defaults and the small behavioral
   calls that come up mid-build: take the option you would recommend and list it under
@@ -41,7 +41,7 @@ Built by Jake Stanier, Antaris Analytics LLC. MIT.
   task really needs more, stop and say so.
 - Never change .claude/, CLAUDE.md or .mcp.json by any route: editor, shell, script or git. If a
   rule gets in your way, say so in the PR description and Jake will decide.
-- If the guard blocks a command, say what was blocked and stop. Doing the same thing by another route (a script, another language, another tool) is the same as doing it directly, and is not allowed. This includes reads. There are two exceptions. If the guard blocked a command substitution or a line it couldn't read, you may redo the work as plain, separate commands, which the guard then judges one by one. If the guard's message names another way, such as opening the file with the Read tool, use that.
+- If the guard blocks a command, say what was blocked, note it in the PR, and carry on   with the work that does not depend on     it. Never do the blocked thing by another route   (a script, another language, another tool); that is the same as doing it       directly, and it includes reads. Two exceptions stand: if the guard blocked a command substitution or a line it could not        read, you may redo the work as plain, separate commands, which the guard then judges one by one; and if the guard's message      names another way, such as opening the file with the Read tool, use that. If the blocked step is the only way to finish, stop    and ask.
 - Docs and every message the guard prints: plain and direct, no em dashes.
 
 ## Design philosophy
