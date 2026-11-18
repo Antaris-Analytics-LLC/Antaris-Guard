@@ -36,12 +36,17 @@ Built by Jake Stanier, Antaris Analytics LLC. MIT.
   from parts, never pasted whole.
 - Run `npm test` before opening a PR; say plainly what ran and what did not.
 - Every PR says which rule ids it added or changed and which cases it added.
-- Subagents: Sonnet for short, well-defined lookups; Opus only when a task needs wider reasoning,
-  and say why. A few at a time, no forks, workflows or teams. Never try to get around a cap; if a
+- Subagents: Sonnet for short, well-defined lookups; Opus when a task needs wider reasoning.
+- If more than 5 are needed, stop and ask for more first. Never try to get around a cap; if a
   task really needs more, stop and say so.
 - Never change .claude/, CLAUDE.md or .mcp.json by any route: editor, shell, script or git. If a
   rule gets in your way, say so in the PR description and Jake will decide.
-- If the guard blocks a command, say what was blocked, note it in the PR, and carry on   with the work that does not depend on     it. Never do the blocked thing by another route   (a script, another language, another tool); that is the same as doing it       directly, and it includes reads. Two exceptions stand: if the guard blocked a command substitution or a line it could not        read, you may redo the work as plain, separate commands, which the guard then judges one by one; and if the guard's message      names another way, such as opening the file with the Read tool, use that. If the blocked step is the only way to finish, stop    and ask.
+- If the guard blocks a command, say what was blocked, note it in the PR, and carry on   with the work that does not depend on 
+  it. Never do the blocked thing by another route   (a script, another language, another tool); that is the same as doing it
+  directly, and it includes reads. Two exceptions stand: if the guard blocked a command substitution or a line it could not
+  read, you may redo the work as plain, separate commands, which the guard then judges one by one; and if the guard's message
+  names another way, such as opening the file with the Read tool, use that. If the blocked step is the only way to finish, stop
+  and ask.
 - Docs and every message the guard prints: plain and direct, no em dashes.
 
 ## Design philosophy
