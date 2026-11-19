@@ -35,8 +35,6 @@ Built by Jake Stanier, Antaris Analytics LLC. MIT.
 - Run `npm test` before opening a PR; say plainly what ran and what did not.
 - Every PR says which rule ids it added or changed and which cases it added.
 - Subagents: Sonnet for short, well-defined lookups; Opus when a task needs wider reasoning.
-- If more than 5 are needed, stop and ask for more first. Never try to get around a cap; if a
-  task really needs more, stop and say so.
 - Never change .claude/, CLAUDE.md or .mcp.json by any route: editor, shell, script or git. If a
   rule gets in your way, say so in the PR description and Jake will decide.
 - If the guard blocks a command, say what was blocked, note it in the PR, and carry on   with the work that does not depend on 
