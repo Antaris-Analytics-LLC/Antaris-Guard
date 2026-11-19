@@ -28,8 +28,6 @@ Built by Jake Stanier, Antaris Analytics LLC. MIT.
   turn a block into an allow without a test that says why.
 - The test table never shrinks. A case removed or weakened needs Jake's yes in the PR, with the
   reason. A behavior change ships with the cases that prove it, blocked and allowed.
-- No browser automation. No Playwright, Puppeteer, Chromium or any headless browser, installed,
-  preinstalled or scripted. Checks are the tests and `node --check`; nothing here has a screen.
 - No network in tests. The hooks have no dependencies at runtime, and the tests need nothing
   beyond Node and the test runner `package.json` pins.
 - Never read, print, write or commit secrets. Test fixtures that look like secrets are assembled
